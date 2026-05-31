@@ -1,5 +1,6 @@
 import React from 'react';
 import type { CampaignRecord } from '../lib/types';
+import { selectCampaignViewModel } from '../lib/campaign-view-model';
 
 const STATUS_LABELS: Record<string, string> = {
   draft: 'Draft', analyzed: 'Analyzed', ready_to_generate: 'Ready',
@@ -16,18 +17,6 @@ const STATUS_COLORS: Record<string, string> = {
   needs_review: 'bg-yellow-500/10 text-yellow-400 border-yellow-500/20',
   exported: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20',
   failed: 'bg-red-500/10 text-red-400 border-red-500/20',
-};
-
-const TYPE_LABELS: Record<string, string> = {
-  sermon: 'Sermon', church_event: 'Event', bible_study: 'Bible Study',
-  devotional: 'Devotional', announcement: 'Announcement', youth_program: 'Youth',
-  general_campaign: 'General', custom: 'Custom',
-};
-
-const GOAL_LABELS: Record<string, string> = {
-  invite_attendance: 'Invitation', promote_livestream: 'Livestream',
-  share_devotional: 'Devotional', announce_event: 'Announcement',
-  teach_topic: 'Teaching', custom: 'Custom',
 };
 
 function timeAgo(dateStr: string): string {
@@ -51,13 +40,10 @@ interface Props {
 
 export default function CampaignCard({ campaign, onOpen, onDuplicate, onDelete }: Props) {
   const statusColor = STATUS_COLORS[campaign.status] || STATUS_COLORS.draft;
-  const snap = campaign.snapshot;
-  const deckResults = snap?.deckResults as any;
-  const socialResults = snap?.socialResults as any;
-  const captionResults = snap?.captionResults as any;
-  const slideCount = deckResults?.slideCount || 0;
-  const socialCount = socialResults?.assetCount || socialResults?.assetIds?.length || 0;
-  const captionCount = captionResults?.length || 0;
+  const view = selectCampaignViewModel(campaign.snapshot);
+  const slideCount = view.summary.counts.slides;
+  const socialCount = view.summary.counts.socialAssets;
+  const captionCount = view.summary.counts.captions;
   const hasOutputs = slideCount > 0 || socialCount > 0 || captionCount > 0;
 
   return (
@@ -76,12 +62,12 @@ export default function CampaignCard({ campaign, onOpen, onDuplicate, onDelete }
       <div className="flex items-center gap-1.5 mb-2 flex-wrap">
         {campaign.type && campaign.type !== 'auto' && (
           <span className="text-[10px] text-gray-500 bg-white/5 px-1.5 py-0.5 rounded">
-            {TYPE_LABELS[campaign.type] || campaign.type}
+            {view.summary.typeLabel}
           </span>
         )}
         {campaign.goal && campaign.goal !== 'auto' && (
           <span className="text-[10px] text-gray-500 bg-white/5 px-1.5 py-0.5 rounded">
-            {GOAL_LABELS[campaign.goal] || campaign.goal}
+            {view.summary.goalLabel}
           </span>
         )}
       </div>

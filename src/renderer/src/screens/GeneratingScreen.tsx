@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { useAppStore } from '../lib/store';
 import { createApiClient, type GenerationJob } from '../lib/api';
+import { selectCampaignViewModel } from '../lib/campaign-view-model';
 
 const stepLabels: Record<string, string> = {
   'Analyze campaign': 'Analyzing campaign',
@@ -24,6 +25,7 @@ const phaseNames = [
 
 export default function GeneratingScreen() {
   const { setScreen, campaign, backendUrl, updateCampaign, saveCampaign } = useAppStore();
+  const view = selectCampaignViewModel(campaign);
   const [job, setJob] = useState<GenerationJob | null>(null);
   const [done, setDone] = useState(false);
   const [failed, setFailed] = useState(false);
@@ -52,11 +54,11 @@ export default function GeneratingScreen() {
           // Also try to fetch from campaign endpoint for richer data
           if (campaign.campaignId) {
             try {
-              const fc = await api.getCampaign(campaign.campaignId) as any;
+              const fc = await api.getCampaign(campaign.campaignId);
               updateCampaign({
-                deckResults: fc.deckResults || status.deckResults,
-                socialResults: fc.socialResults || status.socialResults,
-                captionResults: fc.captionResults || status.captionResults,
+                deckResults: fc.generatedMedia?.deck || status.deckResults,
+                socialResults: fc.generatedMedia?.socialPack || status.socialResults,
+                captionResults: fc.generatedMedia?.captions || status.captionResults,
               });
             } catch {}
           }
@@ -188,7 +190,16 @@ export default function GeneratingScreen() {
             </div>
           </div>
           <button
-            onClick={() => { updateCampaign({ status: 'generated' }); saveCampaign(); setScreen('workspace'); }}
+            onClick={() => {
+              updateCampaign({
+                status: 'generated',
+                deckResults: view.generatedMedia.deck || campaign.deckResults,
+                socialResults: view.generatedMedia.socialPack || campaign.socialResults,
+                captionResults: view.generatedMedia.captions || campaign.captionResults,
+              });
+              saveCampaign();
+              setScreen('workspace');
+            }}
             className="w-full px-6 py-3 bg-purple-500 hover:bg-purple-400 text-white rounded-lg font-semibold transition-all"
           >
             Review Generated Media

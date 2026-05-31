@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { useAppStore } from '../lib/store';
 import { createApiClient } from '../lib/api';
-import { LAYOUT_FAMILY_LABELS } from '../lib/labels';
+import { humanize, labelLayoutFamily } from '../lib/labels';
+import { selectCampaignViewModel } from '../lib/campaign-view-model';
 
 interface SlideData {
   index: number;
@@ -200,7 +201,7 @@ function SlideCanvas({ slide }: { slide: SlideData }) {
       {!isTitle && !isScripture && !isContext && !isPoint && !isApplication && !isReflection && !isInvitation && !isClosing && (
         <div className="relative z-10 flex-1 flex flex-col items-center justify-center px-12 py-10 text-center">
           <p className="text-xs uppercase tracking-[0.2em] opacity-40 mb-4" style={{ color: style.subtext }}>
-            {purpose.replace(/_/g, ' ')}
+            {humanize(purpose)}
           </p>
           <h2 className="text-2xl lg:text-3xl font-bold leading-snug max-w-lg" style={{ color: style.text }}>
             {slide.headline}
@@ -230,19 +231,19 @@ export default function SlidePreviewScreen() {
       .catch(async () => {
         try {
           const fc = await api.getCampaign(campaign.campaignId) as any;
-          setSlideData({ slides: fc?.deckResults?.slides || [] });
+          setSlideData({ slides: fc?.generatedMedia?.deck?.slides || [] });
         } catch {}
       });
   }, [campaign.campaignId, backendUrl]);
 
-  const deckResults = campaign.deckResults as any;
+  const view = selectCampaignViewModel(campaign);
   const apiSlides: any[] = (slideData as any)?.slides || [];
-  const storeSlides: any[] = deckResults?.slides || [];
+  const storeSlides: any[] = view.generatedMedia.deck?.slides || [];
   const rawSlides = apiSlides.length > 0 ? apiSlides : storeSlides;
 
   const slides: SlideData[] = React.useMemo(() => {
     if (rawSlides.length > 0) {
-      const passage = (campaign as any).passageOrTopic || '';
+      const passage = view.summary.passageOrTopic || '';
       return rawSlides.map((s: any) => ({
         index: s.index,
         purpose: s.purpose || 'content',
@@ -257,10 +258,10 @@ export default function SlidePreviewScreen() {
       }));
     }
     return [];
-  }, [rawSlides]);
+  }, [rawSlides, view.summary.passageOrTopic]);
 
   const selected = slides[selectedIndex];
-  const quality = deckResults?.quality || (slideData as any)?.quality;
+  const quality = view.generatedMedia.deck?.quality || (slideData as any)?.quality;
 
   return (
     <div className="max-w-6xl mx-auto space-y-6">
@@ -296,18 +297,18 @@ export default function SlidePreviewScreen() {
                 }`}
               >
                 <div className="flex items-center gap-2">
-                  <span className="w-5 h-5 rounded flex items-center justify-center text-[10px] font-bold flex-shrink-0"
-                    style={{ background: s.accent + '22', color: s.accent }}>
-                    {slide.index}
-                  </span>
-                  <div className="min-w-0">
-                    <p className="font-semibold text-gray-200 truncate text-[11px]">{slide.headline}</p>
-                    <p className="text-gray-500 truncate text-[10px] capitalize">{slide.purpose.replace(/_/g, ' ')}</p>
+                    <span className="w-5 h-5 rounded flex items-center justify-center text-[10px] font-bold flex-shrink-0"
+                      style={{ background: s.accent + '22', color: s.accent }}>
+                      {slide.index}
+                    </span>
+                    <div className="min-w-0">
+                      <p className="font-semibold text-gray-200 truncate text-[11px]">{slide.headline}</p>
+                      <p className="text-gray-500 truncate text-[10px] capitalize">{humanize(slide.purpose)}</p>
+                    </div>
                   </div>
-                </div>
-              </button>
-            );
-          })}
+                </button>
+              );
+            })}
           {slides.length === 0 && (
             <p className="text-gray-500 text-xs text-center py-12">
               No slides generated yet.<br/>Enable Presentation Deck in Outputs.
@@ -324,11 +325,11 @@ export default function SlidePreviewScreen() {
               <div className="grid grid-cols-4 gap-3 text-xs">
                 <div className="bg-white/5 border border-white/10 rounded-lg p-3">
                   <p className="text-gray-500 uppercase tracking-wider mb-0.5">Purpose</p>
-                  <p className="text-gray-200 font-medium capitalize">{selected.purpose.replace(/_/g, ' ')}</p>
+                  <p className="text-gray-200 font-medium capitalize">{humanize(selected.purpose)}</p>
                 </div>
                 <div className="bg-white/5 border border-white/10 rounded-lg p-3">
                   <p className="text-gray-500 uppercase tracking-wider mb-0.5">Layout</p>
-                  <p className="text-gray-200 font-medium">{LAYOUT_FAMILY_LABELS[selected.layoutFamily] || selected.layoutFamily.replace(/_/g, ' ')}</p>
+                  <p className="text-gray-200 font-medium">{labelLayoutFamily(selected.layoutFamily)}</p>
                 </div>
                 <div className="bg-white/5 border border-white/10 rounded-lg p-3">
                   <p className="text-gray-500 uppercase tracking-wider mb-0.5">Visual</p>

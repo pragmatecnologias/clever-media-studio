@@ -1,23 +1,12 @@
 import axios from 'axios';
 import type { CampaignState } from './store';
-
-export interface CampaignAnalysisResult {
-  status: 'ready';
-  detectedType: string;
-  campaignGoal: string;
-  confidence: number;
-  title: string;
-  subtitle?: string;
-  passageOrTopic?: string;
-  mainMessage: string;
-  audienceNeed?: string;
-  tone?: string;
-  cta?: string;
-  speaker?: string;
-  eventDetails: Record<string, string | null>;
-  recommendedOutputs: string[];
-  warnings: string[];
-}
+import type { CampaignAnalysisResult } from '../../../../../../shared/campaign.contract';
+import type {
+  CampaignGeneratedMediaDto,
+  CampaignSummaryDto,
+  DeckDto,
+  SocialPackDto,
+} from '../../../../../../shared/campaign-normalized.contract';
 
 export interface GenerationJob {
   id: string;
@@ -38,8 +27,15 @@ export interface ExportJob {
   status: string;
 }
 
+export interface CampaignResponseDto {
+  summary: CampaignSummaryDto;
+  generatedMedia: CampaignGeneratedMediaDto;
+  analysis?: CampaignAnalysisResult;
+  mediaPackJobId?: string;
+  exportJobId?: string;
+}
+
 export function createApiClient(baseUrl: string, token?: string) {
-  // Dev mode: inject bypass token for localhost
   const isDev = baseUrl.includes('localhost') || baseUrl.includes('127.0.0.1');
   const devToken = isDev ? 'dev-bypass' : token;
 
@@ -52,8 +48,10 @@ export function createApiClient(baseUrl: string, token?: string) {
   return {
     analyzeDocument: async (content: string, language?: string, sourceType?: string): Promise<CampaignAnalysisResult> => {
       const { data } = await client.post('/campaigns/analyze-document', {
-        content, sourceType: sourceType || 'plain_text',
-        language: language || 'en', preferredCampaignType: 'auto',
+        content,
+        sourceType: sourceType || 'plain_text',
+        language: language || 'en',
+        preferredCampaignType: 'auto',
       });
       return data;
     },
@@ -73,19 +71,22 @@ export function createApiClient(baseUrl: string, token?: string) {
       return data;
     },
 
-    generateMediaPack: async (campaignId: string, options: {
-      outputs: Record<string, { enabled: boolean }>;
-      visualStyle?: string;
-      branding?: Record<string, unknown>;
-      socialPackMode?: string;
-      platforms?: string[];
-      imageProvider?: string;
-    }): Promise<{ jobId: string; campaignId: string; status: string }> => {
+    generateMediaPack: async (
+      campaignId: string,
+      options: {
+        outputs: Record<string, { enabled: boolean }>;
+        visualStyle?: string;
+        branding?: Record<string, unknown>;
+        socialPackMode?: string;
+        platforms?: string[];
+        imageProvider?: string;
+      },
+    ): Promise<{ jobId: string; campaignId: string; status: string }> => {
       const { data } = await client.post(`/campaigns/${campaignId}/generate-media-pack`, options);
       return data;
     },
 
-    getCampaign: async (campaignId: string): Promise<Record<string, unknown>> => {
+    getCampaign: async (campaignId: string): Promise<CampaignResponseDto> => {
       const { data } = await client.get(`/campaigns/${campaignId}`);
       return data;
     },
@@ -97,37 +98,19 @@ export function createApiClient(baseUrl: string, token?: string) {
 
     exportCampaign: async (campaignId: string, formats: string[]): Promise<ExportJob> => {
       const { data } = await client.post(`/campaigns/${campaignId}/export`, {
-        formats, includeSource: true, includeMetadata: true,
+        formats,
+        includeSource: true,
+        includeMetadata: true,
       });
       return data;
     },
 
-    getCampaignSlides: async (campaignId: string): Promise<{
-      deckId: string;
-      slideCount: number;
-      layoutFamilies: number;
-      quality: { score: number; passed: boolean; warnings: string[] };
-    }> => {
+    getCampaignSlides: async (campaignId: string): Promise<DeckDto> => {
       const { data } = await client.get(`/campaigns/${campaignId}/slides`);
       return data;
     },
 
-    getCampaignSocialAssets: async (campaignId: string): Promise<{
-      mode: string;
-      assetCount: number;
-      assets: Array<{
-        id: string;
-        platform: string;
-        width: number;
-        height: number;
-        format: string;
-        status: string;
-        caption: string;
-        title: string;
-        quote: string;
-        imageUrl: string;
-      }>;
-    }> => {
+    getCampaignSocialAssets: async (campaignId: string): Promise<SocialPackDto> => {
       const { data } = await client.get(`/campaigns/${campaignId}/social-assets`);
       return data;
     },

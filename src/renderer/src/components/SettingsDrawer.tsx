@@ -1,6 +1,6 @@
 import React from 'react';
 import { useAppStore } from '../lib/store';
-import { CAMPAIGN_TYPE_LABELS, CAMPAIGN_GOAL_LABELS, TYPE_OPTIONS, GOAL_OPTIONS, SOCIAL_MODE_LABELS } from '../lib/labels';
+import { TYPE_OPTIONS, GOAL_OPTIONS, SOCIAL_MODE_LABELS } from '../lib/labels';
 
 export default function SettingsDrawer() {
   const { drawerOpen, toggleDrawer, campaign, updateCampaign } = useAppStore();

@@ -1,8 +1,6 @@
 import React from 'react';
 import { useAppStore } from '../lib/store';
-
-const campaignTypes = ['sermon','church_event','bible_study','devotional','announcement','youth_program','prayer_meeting','evangelistic_meeting','funeral_memorial','wedding_family','community_outreach','general_campaign','custom'];
-const campaignGoals = ['invite_attendance','promote_livestream','share_devotional','announce_event','recap_event','teach_topic','encourage_response','custom'];
+import { TYPE_OPTIONS, GOAL_OPTIONS } from '../lib/labels';
 
 export default function DetailsScreen() {
   const { setScreen, updateCampaign, campaign } = useAppStore();
@@ -11,8 +9,8 @@ export default function DetailsScreen() {
     <div className="max-w-3xl mx-auto space-y-6">
       <h2 className="text-2xl font-bold">Campaign Details</h2>
       <div className="grid grid-cols-2 gap-4">
-        <SelectField label="Campaign Type" value={campaign.campaignType} onChange={(v) => updateCampaign({ campaignType: v })} options={campaignTypes} />
-        <SelectField label="Campaign Goal" value={campaign.campaignGoal} onChange={(v) => updateCampaign({ campaignGoal: v })} options={campaignGoals} />
+        <SelectField label="Campaign Type" value={campaign.campaignType} onChange={(v) => updateCampaign({ campaignType: v })} options={TYPE_OPTIONS} />
+        <SelectField label="Campaign Goal" value={campaign.campaignGoal} onChange={(v) => updateCampaign({ campaignGoal: v })} options={GOAL_OPTIONS} />
         <InputField label="Title" value={campaign.title} onChange={(v) => updateCampaign({ title: v })} />
         <InputField label="Subtitle" value={campaign.subtitle} onChange={(v) => updateCampaign({ subtitle: v })} />
         <InputField label="Passage/Topic" value={campaign.passageOrTopic} onChange={(v) => updateCampaign({ passageOrTopic: v })} />
@@ -50,13 +48,13 @@ function InputField({ label, value, onChange }: { label: string; value: string; 
   );
 }
 
-function SelectField({ label, value, onChange, options }: { label: string; value: string; onChange: (v: string) => void; options: string[] }) {
+function SelectField({ label, value, onChange, options }: { label: string; value: string; onChange: (v: string) => void; options: { value: string; label: string }[] }) {
   return (
     <div>
       <label className="text-xs text-gray-500 uppercase tracking-wider block">{label}</label>
       <select value={value} onChange={(e) => onChange(e.target.value)} className="w-full bg-gray-900 border border-white/10 rounded-lg px-3 py-2 text-sm mt-1">
         {options.map((opt) => (
-          <option key={opt} value={opt}>{opt.replace(/_/g, ' ')}</option>
+          <option key={opt.value} value={opt.value}>{opt.label}</option>
         ))}
       </select>
     </div>

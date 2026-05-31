@@ -7658,6 +7658,321 @@ const useAppStore = create$1()(
     }
   )
 );
+const CAMPAIGN_TYPE_LABELS = {
+  sermon: "Sermon",
+  church_event: "Church Event",
+  bible_study: "Bible Study",
+  devotional: "Devotional",
+  announcement: "Announcement",
+  youth_program: "Youth Program",
+  prayer_meeting: "Prayer Meeting",
+  evangelistic_meeting: "Evangelistic Meeting",
+  funeral_memorial: "Funeral / Memorial",
+  wedding_family: "Wedding / Family",
+  community_outreach: "Community Outreach",
+  general_campaign: "General Message",
+  custom: "Custom"
+};
+const CAMPAIGN_GOAL_LABELS = {
+  invite_attendance: "Invite People to Attend",
+  promote_livestream: "Promote Livestream",
+  share_devotional: "Share a Devotional",
+  announce_event: "Announce an Event",
+  recap_event: "Recap an Event",
+  teach_topic: "Teach a Topic",
+  encourage_response: "Encourage Response",
+  custom: "Custom"
+};
+const CAMPAIGN_STATUS_LABELS = {
+  draft: "Draft",
+  analyzed: "Analyzed",
+  ready_to_generate: "Ready to Generate",
+  generating: "Generating",
+  generated: "Generated",
+  needs_review: "Needs Review",
+  exported: "Exported",
+  failed: "Failed",
+  not_found: "Not Found"
+};
+const LANGUAGE_LABELS = {
+  en: "English",
+  es: "Español"
+};
+const SOCIAL_MODE_LABELS = {
+  invitation_campaign: "Invitation Campaign",
+  devotional_pack: "Devotional Pack",
+  announcement_pack: "Announcement Pack",
+  recap_pack: "Recap Pack"
+};
+const SOCIAL_PLATFORM_LABELS = {
+  instagram: "Instagram",
+  facebook: "Facebook",
+  whatsapp: "WhatsApp",
+  youtube: "YouTube",
+  x: "X"
+};
+const SOCIAL_ASSET_ROLE_LABELS = {
+  main_invitation: "Main Invitation",
+  quote_teaser: "Quote Teaser",
+  story_invitation: "Story Invitation",
+  engagement_question: "Engagement Question",
+  whatsapp_invite: "WhatsApp Invite",
+  whatsapp_forward: "WhatsApp Forward",
+  youtube_thumbnail: "YouTube Thumbnail",
+  devotional_quote: "Devotional Quote",
+  reflection_question: "Reflection Question",
+  encouragement_card: "Encouragement Card",
+  scripture_reminder: "Scripture Reminder",
+  whatsapp_share: "WhatsApp Share",
+  recap_highlight: "Recap Highlight",
+  event_poster: "Event Poster",
+  announcement_card: "Announcement Card",
+  devotional_teaser: "Devotional Teaser"
+};
+const OUTPUT_LABELS = {
+  presentationDeck: "Slides",
+  presentation_deck: "Presentation Deck",
+  socialPack: "Social Pack",
+  social_pack: "Social Pack",
+  captionPack: "Captions",
+  caption_pack: "Caption Pack",
+  thumbnail: "Thumbnail",
+  story_pack: "Story Pack",
+  whatsapp_forward: "WhatsApp Forward",
+  event_poster: "Event Poster",
+  export_package: "Export Package",
+  publishing_package: "Publishing Package"
+};
+const LAYOUT_FAMILY_LABELS = {
+  title_cinematic: "Title Slide",
+  scripture_focus: "Scripture Slide",
+  big_idea_statement: "Big Idea",
+  point_declaration: "Main Point",
+  split_tension: "Contrast Point",
+  application_steps: "Application",
+  appeal_invitation: "Invitation",
+  closing_blessing: "Closing",
+  story_moment: "Story Moment",
+  reflection_question: "Reflection",
+  devotional_centerpiece: "Devotional Center",
+  bold_thumbnail: "Thumbnail",
+  story_vertical_hero: "Story Graphic",
+  invitation_card: "Invitation Card",
+  quote_card_minimal: "Quote Card",
+  quote_centerpiece: "Quote Center",
+  event_hero: "Event Hero",
+  schedule_overview: "Schedule",
+  speaker_intro: "Speaker Intro",
+  location_details: "Location Details",
+  call_to_action: "Call to Action",
+  event_details: "Event Details"
+};
+function labelCampaignType(type) {
+  return type ? CAMPAIGN_TYPE_LABELS[type] || humanize(type) : "";
+}
+function labelCampaignGoal(goal) {
+  return goal ? CAMPAIGN_GOAL_LABELS[goal] || humanize(goal) : "";
+}
+function labelCampaignStatus(status) {
+  return status ? CAMPAIGN_STATUS_LABELS[status] || humanize(status) : "";
+}
+function labelLanguage(language) {
+  return language ? LANGUAGE_LABELS[language] || humanize(language) : "";
+}
+function labelSocialMode(mode) {
+  return mode ? SOCIAL_MODE_LABELS[mode] || humanize(mode) : "";
+}
+function labelSocialPlatform(platform2) {
+  return platform2 ? SOCIAL_PLATFORM_LABELS[platform2] || humanize(platform2) : "";
+}
+function labelSocialAssetRole(role) {
+  return role ? SOCIAL_ASSET_ROLE_LABELS[role] || humanize(role) : "";
+}
+function labelLayoutFamily(layoutFamily) {
+  return layoutFamily ? LAYOUT_FAMILY_LABELS[layoutFamily] || humanize(layoutFamily) : "";
+}
+function labelOutput(output) {
+  return output ? OUTPUT_LABELS[output] || humanize(output) : "";
+}
+function humanize(value) {
+  return value.replace(/_/g, " ").replace(/\s+/g, " ").trim().replace(/\b\w/g, (m2) => m2.toUpperCase());
+}
+function toNumber(value) {
+  return typeof value === "number" && Number.isFinite(value) ? value : 0;
+}
+function asString(value, fallback = "") {
+  return typeof value === "string" ? value : value == null ? fallback : String(value);
+}
+function toQuality(input) {
+  return {
+    score: typeof input?.score === "number" ? input.score : null,
+    passed: typeof input?.passed === "boolean" ? input.passed : null,
+    warnings: Array.isArray(input?.warnings) ? input?.warnings.filter(Boolean) : []
+  };
+}
+function buildCampaignSummaryDto(input) {
+  const deckResults = input.deckResults || {};
+  const socialResults = input.socialResults || {};
+  const captionResults = Array.isArray(input.captionResults) ? input.captionResults : [];
+  const quality = toQuality(input.qualityResults || { warnings: input.warnings || [] });
+  const socialAssetCount = toNumber(socialResults.assetCount) || toNumber(socialResults.generatedAssets) || (Array.isArray(socialResults.assetIds) ? (socialResults.assetIds || []).length : 0);
+  const socialPlatformCount = toNumber(socialResults.platformCount) || (Array.isArray(socialResults.platforms) ? socialResults.platforms.length : 0) || (Array.isArray(socialResults.assets) ? new Set(socialResults.assets.map((asset) => asset.platform)).size : 0);
+  const outputs = {
+    presentationDeck: toNumber(deckResults.slideCount) > 0,
+    socialPack: socialAssetCount > 0,
+    captionPack: captionResults.length > 0,
+    exportPackage: !!input.exportResults
+  };
+  const counts = {
+    slides: toNumber(deckResults.slideCount),
+    socialAssets: socialAssetCount,
+    captions: captionResults.length,
+    exports: input.exportResults ? 1 : 0,
+    platforms: socialPlatformCount
+  };
+  return {
+    campaignId: input.campaignId,
+    title: asString(input.title || input.analysis?.title, "Untitled"),
+    type: input.type || input.analysis?.detectedType || "general_campaign",
+    typeLabel: labelCampaignType(input.type || input.analysis?.detectedType || "general_campaign"),
+    goal: input.goal || input.analysis?.campaignGoal || "share_devotional",
+    goalLabel: labelCampaignGoal(input.goal || input.analysis?.campaignGoal || "share_devotional"),
+    status: input.status || "draft",
+    statusLabel: labelCampaignStatus(input.status || "draft"),
+    language: input.language || "en",
+    languageLabel: labelLanguage(input.language || "en"),
+    passageOrTopic: asString(input.passageOrTopic || input.analysis?.passageOrTopic),
+    mainMessage: asString(input.mainMessage || input.analysis?.mainMessage),
+    cta: asString(input.cta || input.analysis?.cta),
+    eventDetails: input.eventDetails || input.analysis?.eventDetails || {},
+    outputs,
+    counts,
+    quality,
+    warnings: Array.isArray(input.warnings) ? input.warnings.filter(Boolean) : quality.warnings,
+    createdAt: input.createdAt || (/* @__PURE__ */ new Date()).toISOString(),
+    updatedAt: input.updatedAt || input.createdAt || (/* @__PURE__ */ new Date()).toISOString()
+  };
+}
+function buildCampaignGeneratedMediaDto(input) {
+  const deckSlides = Array.isArray(input.deckResults?.slides) ? input.deckResults.slides : [];
+  const socialAssets = Array.isArray(input.socialAssets) ? input.socialAssets : Array.isArray(input.socialResults?.assets) ? input.socialResults.assets : [];
+  const captionResults = Array.isArray(input.captionResults) ? input.captionResults : [];
+  const quality = toQuality(input.qualityResults || input.socialResults?.quality || input.deckResults?.quality);
+  return {
+    campaignId: input.campaignId,
+    deck: input.deckResults?.deckId ? {
+      deckId: asString(input.deckResults.deckId),
+      slideCount: toNumber(input.deckResults.slideCount) || deckSlides.length,
+      slides: deckSlides.map((slide, index) => ({
+        id: asString(slide.id || `${input.deckResults.deckId}-slide-${index + 1}`),
+        index: toNumber(slide.index) || index + 1,
+        role: asString(slide.role || slide.purpose || "content"),
+        roleLabel: humanize(asString(slide.role || slide.purpose || "content")),
+        purpose: asString(slide.purpose || slide.role || "content"),
+        headline: asString(slide.headline || ""),
+        subheadline: asString(slide.subheadline || slide.bodyLines?.[0] || ""),
+        bodyLines: Array.isArray(slide.bodyLines) ? slide.bodyLines.map((line) => asString(line)) : [],
+        scriptureReference: asString(slide.scriptureReference || ""),
+        scriptureText: asString(slide.scriptureText || ""),
+        layoutFamily: asString(slide.layoutFamily || "point_declaration"),
+        layoutLabel: labelLayoutFamily(slide.layoutFamily || "point_declaration"),
+        visualIntent: asString(slide.visualIntent || ""),
+        status: "ready",
+        quality: {
+          score: typeof slide.quality?.score === "number" ? slide.quality.score : null,
+          warnings: Array.isArray(slide.quality?.warnings) ? slide.quality.warnings.filter(Boolean) : []
+        }
+      })),
+      status: "ready",
+      quality
+    } : null,
+    socialPack: input.socialResults ? {
+      mode: asString(input.socialResults.mode || "devotional_pack"),
+      modeLabel: labelSocialMode(input.socialResults.mode || "devotional_pack"),
+      assetCount: toNumber(input.socialResults.assetCount) || socialAssets.length,
+      platformCount: Array.isArray(input.socialResults.platforms) ? input.socialResults.platforms.length : new Set(socialAssets.map((asset) => asset.platform)).size,
+      assets: socialAssets.map((asset, index) => ({
+        id: asString(asset.id || `asset-${index + 1}`),
+        role: asString(asset.role || input.socialResults.assetSpecs?.[index]?.assetRole || "social_asset"),
+        roleLabel: labelSocialAssetRole(asset.role || input.socialResults.assetSpecs?.[index]?.assetRole || "social_asset"),
+        platform: asString(asset.platform || input.socialResults.assetSpecs?.[index]?.platform || "instagram"),
+        platformLabel: labelSocialPlatform(asset.platform || input.socialResults.assetSpecs?.[index]?.platform || "instagram"),
+        format: asString(asset.format || input.socialResults.assetSpecs?.[index]?.format || ""),
+        width: toNumber(asset.width),
+        height: toNumber(asset.height),
+        imageUrl: asString(asset.imageUrl || ""),
+        caption: asString(asset.caption || asset.quote || ""),
+        cta: asString(asset.cta || ""),
+        status: asString(asset.status || "draft"),
+        quality: {
+          score: typeof asset.quality?.score === "number" ? asset.quality.score : null,
+          warnings: Array.isArray(asset.quality?.warnings) ? asset.quality.warnings.filter(Boolean) : []
+        }
+      })),
+      status: "ready",
+      quality
+    } : null,
+    captions: captionResults.map((caption, index) => ({
+      id: asString(caption.id || `caption-${index + 1}`),
+      role: asString(caption.role || input.socialResults?.assetSpecs?.[index]?.assetRole || "caption"),
+      roleLabel: labelSocialAssetRole(caption.role || input.socialResults?.assetSpecs?.[index]?.assetRole || "caption"),
+      platform: asString(caption.platform || input.socialResults?.assetSpecs?.[index]?.platform || ""),
+      cta: asString(caption.cta || ""),
+      caption: asString(caption.longCaption || caption.caption || caption.captionPreview || ""),
+      hashtags: Array.isArray(caption.hashtags) ? caption.hashtags.map((tag) => asString(tag)) : [],
+      status: "ready"
+    })),
+    exports: input.exportResults ? [{
+      exportId: asString(input.exportResults.exportId || input.exportResults.exportJobId || `export-${Date.now()}`),
+      status: input.exportResults.status || "ready",
+      fileName: asString(input.exportResults.fileName || ""),
+      filePath: asString(input.exportResults.filePath || ""),
+      fileSizeBytes: toNumber(input.exportResults.fileSizeBytes),
+      fileCount: toNumber(input.exportResults.fileCount) || 0,
+      formats: Array.isArray(input.exportResults.formats) ? input.exportResults.formats.map((format) => asString(format)) : [],
+      createdAt: asString(input.exportResults.createdAt || (/* @__PURE__ */ new Date()).toISOString()),
+      items: Array.isArray(input.exportResults.items) ? input.exportResults.items.map((item) => ({
+        name: asString(item.name || ""),
+        label: asString(item.label || ""),
+        format: asString(item.format || ""),
+        path: asString(item.path || "")
+      })) : []
+    }] : [],
+    quality
+  };
+}
+function selectCampaignViewModel(campaign, backendCampaign) {
+  const summarySource = buildCampaignSummaryDto({
+    campaignId: campaign.campaignId || "",
+    title: campaign.title,
+    type: campaign.campaignType,
+    goal: campaign.campaignGoal,
+    status: campaign.status,
+    language: campaign.language,
+    passageOrTopic: campaign.passageOrTopic,
+    mainMessage: campaign.mainMessage,
+    cta: campaign.cta,
+    eventDetails: campaign.eventDetails,
+    deckResults: campaign.deckResults,
+    socialResults: campaign.socialResults,
+    captionResults: campaign.captionResults ? campaign.captionResults : [],
+    warnings: Array.isArray(campaign.analysis?.warnings) ? campaign.analysis.warnings : [],
+    analysis: campaign.analysis,
+    createdAt: (/* @__PURE__ */ new Date()).toISOString(),
+    updatedAt: (/* @__PURE__ */ new Date()).toISOString()
+  });
+  const mediaSource = buildCampaignGeneratedMediaDto({
+    campaignId: summarySource.campaignId,
+    deckResults: campaign.deckResults,
+    socialResults: campaign.socialResults,
+    captionResults: campaign.captionResults ? campaign.captionResults : [],
+    qualityResults: campaign.deckResults ? campaign.deckResults?.quality : null
+  });
+  return {
+    summary: summarySource,
+    generatedMedia: mediaSource
+  };
+}
 const STATUS_LABELS$1 = {
   draft: "Draft",
   analyzed: "Analyzed",
@@ -7678,24 +7993,6 @@ const STATUS_COLORS$1 = {
   exported: "bg-emerald-500/10 text-emerald-400 border-emerald-500/20",
   failed: "bg-red-500/10 text-red-400 border-red-500/20"
 };
-const TYPE_LABELS = {
-  sermon: "Sermon",
-  church_event: "Event",
-  bible_study: "Bible Study",
-  devotional: "Devotional",
-  announcement: "Announcement",
-  youth_program: "Youth",
-  general_campaign: "General",
-  custom: "Custom"
-};
-const GOAL_LABELS = {
-  invite_attendance: "Invitation",
-  promote_livestream: "Livestream",
-  share_devotional: "Devotional",
-  announce_event: "Announcement",
-  teach_topic: "Teaching",
-  custom: "Custom"
-};
 function timeAgo(dateStr) {
   const diff = Date.now() - new Date(dateStr).getTime();
   const mins = Math.floor(diff / 6e4);
@@ -7709,13 +8006,10 @@ function timeAgo(dateStr) {
 }
 function CampaignCard({ campaign, onOpen, onDuplicate, onDelete }) {
   const statusColor = STATUS_COLORS$1[campaign.status] || STATUS_COLORS$1.draft;
-  const snap = campaign.snapshot;
-  const deckResults = snap?.deckResults;
-  const socialResults = snap?.socialResults;
-  const captionResults = snap?.captionResults;
-  const slideCount = deckResults?.slideCount || 0;
-  const socialCount = socialResults?.assetCount || socialResults?.assetIds?.length || 0;
-  const captionCount = captionResults?.length || 0;
+  const view = selectCampaignViewModel(campaign.snapshot);
+  const slideCount = view.summary.counts.slides;
+  const socialCount = view.summary.counts.socialAssets;
+  const captionCount = view.summary.counts.captions;
   const hasOutputs = slideCount > 0 || socialCount > 0 || captionCount > 0;
   return /* @__PURE__ */ jsxRuntimeExports.jsxs(
     "div",
@@ -7726,8 +8020,8 @@ function CampaignCard({ campaign, onOpen, onDuplicate, onDelete }) {
         /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "flex items-start justify-between mb-2", children: /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: `text-[10px] px-2 py-0.5 rounded border ${statusColor}`, children: STATUS_LABELS$1[campaign.status] || campaign.status }) }),
         /* @__PURE__ */ jsxRuntimeExports.jsx("h3", { className: "text-sm font-semibold text-gray-100 mb-1.5 line-clamp-2", children: campaign.title }),
         /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-center gap-1.5 mb-2 flex-wrap", children: [
-          campaign.type && campaign.type !== "auto" && /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "text-[10px] text-gray-500 bg-white/5 px-1.5 py-0.5 rounded", children: TYPE_LABELS[campaign.type] || campaign.type }),
-          campaign.goal && campaign.goal !== "auto" && /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "text-[10px] text-gray-500 bg-white/5 px-1.5 py-0.5 rounded", children: GOAL_LABELS[campaign.goal] || campaign.goal })
+          campaign.type && campaign.type !== "auto" && /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "text-[10px] text-gray-500 bg-white/5 px-1.5 py-0.5 rounded", children: view.summary.typeLabel }),
+          campaign.goal && campaign.goal !== "auto" && /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "text-[10px] text-gray-500 bg-white/5 px-1.5 py-0.5 rounded", children: view.summary.goalLabel })
         ] }),
         hasOutputs && /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-center gap-2 mb-2 text-[10px] text-gray-500", children: [
           slideCount > 0 && /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { children: [
@@ -11021,43 +11315,10 @@ Friday 7pm — Pizza + Games + Worship`
     ] })
   ] });
 }
-const CAMPAIGN_TYPE_LABELS = {
-  sermon: "Sermon",
-  church_event: "Church Event",
-  bible_study: "Bible Study",
-  devotional: "Devotional",
-  announcement: "Announcement",
-  youth_program: "Youth Program",
-  prayer_meeting: "Prayer Meeting",
-  evangelistic_meeting: "Evangelistic Meeting",
-  funeral_memorial: "Funeral / Memorial",
-  wedding_family: "Wedding / Family",
-  community_outreach: "Community Outreach",
-  general_campaign: "General Message",
-  custom: "Custom",
-  auto: "Auto-detect"
-};
-const CAMPAIGN_GOAL_LABELS = {
-  invite_attendance: "Invite People to Attend",
-  promote_livestream: "Promote Livestream",
-  share_devotional: "Share a Devotional",
-  announce_event: "Announce an Event",
-  recap_event: "Recap an Event",
-  teach_topic: "Teach a Topic",
-  encourage_response: "Encourage Response",
-  custom: "Custom",
-  auto: "Auto-detect"
-};
-const SOCIAL_MODE_LABELS = {
-  invitation_campaign: "Invitation Campaign",
-  devotional_pack: "Devotional Pack",
-  announcement_pack: "Announcement Pack",
-  recap_pack: "Recap Pack"
-};
-const KNOWN_PREFIXES = ["Title:", "Topic:", "Message:", "Goal:", "Type:", "Passage:", "Main Message:", "CTA:", "Audience:", "Speaker:", "Event:", "Date:", "Time:", "Location:"];
 function stripLabelPrefix(value) {
   if (!value) return "";
-  for (const prefix of KNOWN_PREFIXES) {
+  const prefixes = ["Title:", "Topic:", "Message:", "Goal:", "Type:", "Passage:", "Main Message:", "CTA:", "Audience:", "Speaker:", "Event:", "Date:", "Time:", "Location:"];
+  for (const prefix of prefixes) {
     if (value.toLowerCase().startsWith(prefix.toLowerCase())) {
       return value.slice(prefix.length).trim();
     }
@@ -11077,65 +11338,27 @@ function getConfidenceLabel(confidence) {
 const TYPE_OPTIONS = [
   { value: "sermon", label: "Sermon" },
   { value: "church_event", label: "Church Event" },
-  { value: "devotional", label: "Devotional" },
   { value: "bible_study", label: "Bible Study" },
+  { value: "devotional", label: "Devotional" },
   { value: "announcement", label: "Announcement" },
   { value: "youth_program", label: "Youth Program" },
   { value: "prayer_meeting", label: "Prayer Meeting" },
-  { value: "evangelistic_meeting", label: "Evangelistic Meeting" }
+  { value: "evangelistic_meeting", label: "Evangelistic Meeting" },
+  { value: "funeral_memorial", label: "Funeral / Memorial" },
+  { value: "wedding_family", label: "Wedding / Family" },
+  { value: "community_outreach", label: "Community Outreach" },
+  { value: "general_campaign", label: "General Message" },
+  { value: "custom", label: "Custom" }
 ];
-const ASSET_ROLE_LABELS = {
-  main_invitation: "Main Invitation",
-  quote_teaser: "Quote Teaser",
-  story_invitation: "Story Invitation",
-  engagement_question: "Engagement Question",
-  whatsapp_invite: "WhatsApp Invite",
-  whatsapp_forward: "WhatsApp Forward",
-  youtube_thumbnail: "YouTube Thumbnail",
-  devotional_quote: "Devotional Quote",
-  reflection_question: "Reflection Question",
-  encouragement_card: "Encouragement Card",
-  scripture_reminder: "Scripture Reminder",
-  whatsapp_share: "WhatsApp Share",
-  recap_highlight: "Recap Highlight",
-  event_poster: "Event Poster",
-  announcement_card: "Announcement Card"
-};
-const OUTPUT_LABELS = {
-  presentationDeck: "Slides",
-  presentation_deck: "Presentation Deck",
-  socialPack: "Social Pack",
-  social_pack: "Social Pack",
-  captionPack: "Captions",
-  caption_pack: "Caption Pack",
-  thumbnail: "Thumbnail"
-};
-const LAYOUT_FAMILY_LABELS = {
-  title_cinematic: "Title Slide",
-  scripture_focus: "Scripture Slide",
-  big_idea_statement: "Big Idea",
-  point_declaration: "Main Point",
-  split_tension: "Contrast Point",
-  application_steps: "Application",
-  appeal_invitation: "Invitation",
-  closing_blessing: "Closing",
-  story_moment: "Story Moment",
-  reflection_question: "Reflection",
-  devotional_centerpiece: "Devotional Center",
-  bold_thumbnail: "Thumbnail",
-  story_vertical_hero: "Story Graphic",
-  invitation_card: "Invitation Card",
-  quote_card_minimal: "Quote Card",
-  quote_centerpiece: "Quote Center"
-};
 const GOAL_OPTIONS = [
   { value: "invite_attendance", label: "Invite People to Attend" },
+  { value: "promote_livestream", label: "Promote Livestream" },
   { value: "share_devotional", label: "Share a Devotional" },
   { value: "announce_event", label: "Announce an Event" },
-  { value: "promote_livestream", label: "Promote Livestream" },
+  { value: "recap_event", label: "Recap an Event" },
   { value: "teach_topic", label: "Teach a Topic" },
   { value: "encourage_response", label: "Encourage Response" },
-  { value: "recap_event", label: "Recap an Event" }
+  { value: "custom", label: "Custom" }
 ];
 const PRESETS = [
   {
@@ -11328,7 +11551,7 @@ function AnalysisScreen() {
         /* @__PURE__ */ jsxRuntimeExports.jsx(CleanField, { label: "CTA", value: campaign.cta, missingText: "No CTA found — add in Configure" }),
         /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "col-span-2", children: /* @__PURE__ */ jsxRuntimeExports.jsx(CleanField, { label: "Main Message", value: campaign.mainMessage }) }),
         /* @__PURE__ */ jsxRuntimeExports.jsx(CleanField, { label: "Audience", value: campaign.audienceNeed }),
-        /* @__PURE__ */ jsxRuntimeExports.jsx(CleanField, { label: "Language", value: campaign.language === "en" ? "English" : "Español" })
+        /* @__PURE__ */ jsxRuntimeExports.jsx(CleanField, { label: "Language", value: labelLanguage(campaign.language) })
       ] }),
       result?.keyPoints?.length ? /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "pt-2 border-t border-white/5", children: [
         /* @__PURE__ */ jsxRuntimeExports.jsx("label", { className: "text-xs text-gray-500 uppercase tracking-wider block mb-2", children: "Key Points / Outline" }),
@@ -11344,7 +11567,7 @@ function AnalysisScreen() {
         "Recommended for ",
         CAMPAIGN_TYPE_LABELS[result?.detectedType || ""] || "this campaign"
       ] }),
-      /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "flex flex-wrap gap-1.5", children: result?.recommendedOutputs?.map((o) => /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "text-[10px] px-2 py-1 rounded-full bg-purple-500/10 text-purple-300 border border-purple-500/20", children: OUTPUT_LABELS[o] || o.replace(/_/g, " ") }, o)) || /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "text-xs text-gray-500", children: "No recommendations" }) }),
+      /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "flex flex-wrap gap-1.5", children: result?.recommendedOutputs?.map((o) => /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "text-[10px] px-2 py-1 rounded-full bg-purple-500/10 text-purple-300 border border-purple-500/20", children: labelOutput(o) || OUTPUT_LABELS[o] }, o)) || /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "text-xs text-gray-500", children: "No recommendations" }) }),
       (() => {
         const bestPreset = PRESETS.find((p2) => p2.campaignType === result?.detectedType);
         return bestPreset ? /* @__PURE__ */ jsxRuntimeExports.jsxs("p", { className: "text-xs text-gray-500", children: [
@@ -11410,15 +11633,13 @@ function CleanField({ label, value, missingText }) {
     clean ? /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-sm text-gray-200 mt-1", children: clean }) : /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "text-xs text-gray-600 italic mt-1 block", children: missingText || "Not found" })
   ] });
 }
-const campaignTypes = ["sermon", "church_event", "bible_study", "devotional", "announcement", "youth_program", "prayer_meeting", "evangelistic_meeting", "funeral_memorial", "wedding_family", "community_outreach", "general_campaign", "custom"];
-const campaignGoals = ["invite_attendance", "promote_livestream", "share_devotional", "announce_event", "recap_event", "teach_topic", "encourage_response", "custom"];
 function DetailsScreen() {
   const { setScreen, updateCampaign, campaign } = useAppStore();
   return /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "max-w-3xl mx-auto space-y-6", children: [
     /* @__PURE__ */ jsxRuntimeExports.jsx("h2", { className: "text-2xl font-bold", children: "Campaign Details" }),
     /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "grid grid-cols-2 gap-4", children: [
-      /* @__PURE__ */ jsxRuntimeExports.jsx(SelectField$1, { label: "Campaign Type", value: campaign.campaignType, onChange: (v2) => updateCampaign({ campaignType: v2 }), options: campaignTypes }),
-      /* @__PURE__ */ jsxRuntimeExports.jsx(SelectField$1, { label: "Campaign Goal", value: campaign.campaignGoal, onChange: (v2) => updateCampaign({ campaignGoal: v2 }), options: campaignGoals }),
+      /* @__PURE__ */ jsxRuntimeExports.jsx(SelectField$1, { label: "Campaign Type", value: campaign.campaignType, onChange: (v2) => updateCampaign({ campaignType: v2 }), options: TYPE_OPTIONS }),
+      /* @__PURE__ */ jsxRuntimeExports.jsx(SelectField$1, { label: "Campaign Goal", value: campaign.campaignGoal, onChange: (v2) => updateCampaign({ campaignGoal: v2 }), options: GOAL_OPTIONS }),
       /* @__PURE__ */ jsxRuntimeExports.jsx(InputField$1, { label: "Title", value: campaign.title, onChange: (v2) => updateCampaign({ title: v2 }) }),
       /* @__PURE__ */ jsxRuntimeExports.jsx(InputField$1, { label: "Subtitle", value: campaign.subtitle, onChange: (v2) => updateCampaign({ subtitle: v2 }) }),
       /* @__PURE__ */ jsxRuntimeExports.jsx(InputField$1, { label: "Passage/Topic", value: campaign.passageOrTopic, onChange: (v2) => updateCampaign({ passageOrTopic: v2 }) }),
@@ -11452,7 +11673,7 @@ function InputField$1({ label, value, onChange }) {
 function SelectField$1({ label, value, onChange, options }) {
   return /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { children: [
     /* @__PURE__ */ jsxRuntimeExports.jsx("label", { className: "text-xs text-gray-500 uppercase tracking-wider block", children: label }),
-    /* @__PURE__ */ jsxRuntimeExports.jsx("select", { value, onChange: (e) => onChange(e.target.value), className: "w-full bg-gray-900 border border-white/10 rounded-lg px-3 py-2 text-sm mt-1", children: options.map((opt) => /* @__PURE__ */ jsxRuntimeExports.jsx("option", { value: opt, children: opt.replace(/_/g, " ") }, opt)) })
+    /* @__PURE__ */ jsxRuntimeExports.jsx("select", { value, onChange: (e) => onChange(e.target.value), className: "w-full bg-gray-900 border border-white/10 rounded-lg px-3 py-2 text-sm mt-1", children: options.map((opt) => /* @__PURE__ */ jsxRuntimeExports.jsx("option", { value: opt.value, children: opt.label }, opt.value)) })
   ] });
 }
 const visualStyles = [
@@ -11713,6 +11934,7 @@ const phaseNames = [
 ];
 function GeneratingScreen() {
   const { setScreen, campaign, backendUrl, updateCampaign, saveCampaign } = useAppStore();
+  const view = selectCampaignViewModel(campaign);
   const [job, setJob] = reactExports.useState(null);
   const [done, setDone] = reactExports.useState(false);
   const [failed, setFailed] = reactExports.useState(false);
@@ -11742,9 +11964,9 @@ function GeneratingScreen() {
             try {
               const fc2 = await api.getCampaign(campaign.campaignId);
               updateCampaign({
-                deckResults: fc2.deckResults || status.deckResults,
-                socialResults: fc2.socialResults || status.socialResults,
-                captionResults: fc2.captionResults || status.captionResults
+                deckResults: fc2.generatedMedia?.deck || status.deckResults,
+                socialResults: fc2.generatedMedia?.socialPack || status.socialResults,
+                captionResults: fc2.generatedMedia?.captions || status.captionResults
               });
             } catch {
             }
@@ -11871,7 +12093,12 @@ Time: ${(/* @__PURE__ */ new Date()).toISOString()}`;
         "button",
         {
           onClick: () => {
-            updateCampaign({ status: "generated" });
+            updateCampaign({
+              status: "generated",
+              deckResults: view.generatedMedia.deck || campaign.deckResults,
+              socialResults: view.generatedMedia.socialPack || campaign.socialResults,
+              captionResults: view.generatedMedia.captions || campaign.captionResults
+            });
             saveCampaign();
             setScreen("workspace");
           },
@@ -11923,19 +12150,18 @@ function ReviewScreen() {
   ] });
 }
 function OverviewTab({ campaign }) {
-  const typeLabel = CAMPAIGN_TYPE_LABELS[campaign.campaignType] || campaign.campaignType;
-  const goalLabel = CAMPAIGN_GOAL_LABELS[campaign.campaignGoal] || campaign.campaignGoal;
+  const view = selectCampaignViewModel(campaign);
   const items = [
-    ["Campaign Type", typeLabel],
-    ["Goal", goalLabel],
-    ["Title", campaign.title],
-    ["Main Message", campaign.mainMessage],
-    ["Language", campaign.language === "en" ? "English" : "Español"],
+    ["Campaign Type", view.summary.typeLabel],
+    ["Goal", view.summary.goalLabel],
+    ["Title", view.summary.title],
+    ["Main Message", view.summary.mainMessage],
+    ["Language", view.summary.languageLabel],
     ["Tone", campaign.tone || "—"],
-    ["CTA", campaign.cta || "—"],
+    ["CTA", view.summary.cta || "—"],
     ["Outputs", Object.entries(campaign.outputSelections || {}).filter(([, v2]) => v2).map(([k2]) => OUTPUT_LABELS[k2] || k2).join(", ") || "—"],
-    ["Event Date", campaign.eventDetails?.date || "—"],
-    ["Location", campaign.eventDetails?.locationName || "—"]
+    ["Event Date", view.summary.eventDetails?.date || "—"],
+    ["Location", view.summary.eventDetails?.locationName || "—"]
   ];
   return /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "grid grid-cols-2 gap-4", children: items.map(([label, value]) => /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { children: [
     /* @__PURE__ */ jsxRuntimeExports.jsx("label", { className: "text-xs text-gray-500 uppercase tracking-wider block", children: label }),
@@ -11944,9 +12170,10 @@ function OverviewTab({ campaign }) {
 }
 function SlidesTab({ setScreen, campaign }) {
   const hasDeck = campaign.outputSelections?.presentationDeck;
-  const deckResults = campaign.deckResults;
+  const view = selectCampaignViewModel(campaign);
+  const deckResults = view.generatedMedia.deck;
   const slideCount = deckResults?.slideCount || 0;
-  const layouts = deckResults?.layouts || 0;
+  const layouts = new Set(deckResults?.slides?.map((s) => s.layoutFamily)).size;
   const deckQuality = deckResults?.quality;
   return /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "space-y-4", children: [
     /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-center gap-2", children: [
@@ -11969,51 +12196,38 @@ function SlidesTab({ setScreen, campaign }) {
       /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-xs text-gray-600 truncate", children: "slide" })
     ] }, i)) : ["title_cinematic", "scripture_focus", "big_idea_statement", "point_declaration", "split_tension", "application_steps", "appeal_invitation", "closing_blessing"].map((l2, i) => /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "bg-white/5 border border-white/10 rounded-lg p-2 text-center", children: [
       /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-xs text-gray-400", children: i + 1 }),
-      /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-xs text-gray-600 truncate", children: l2.replace(/_/g, " ") })
+      /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-xs text-gray-600 truncate", children: labelLayoutFamily(l2) })
     ] }, i)) })
   ] });
 }
 function SocialTab({ setScreen, campaign }) {
   const hasSocial = campaign.outputSelections?.socialPack;
-  const socialResults = campaign.socialResults;
+  const view = selectCampaignViewModel(campaign);
+  const socialResults = view.generatedMedia.socialPack;
   const assetCount = socialResults?.assetCount || 0;
   const socialMode = socialResults?.mode || "unknown";
   return /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "space-y-4", children: [
     /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-center gap-2", children: [
-      /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-sm text-gray-400", children: hasSocial ? assetCount > 0 ? `${assetCount} assets · ${SOCIAL_MODE_LABELS[socialMode] || socialMode}` : "Social pack generation in progress..." : "Social pack was not selected." }),
+      /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-sm text-gray-400", children: hasSocial ? assetCount > 0 ? `${assetCount} assets · ${labelSocialMode(socialMode) || socialMode}` : "Social pack generation in progress..." : "Social pack was not selected." }),
       hasSocial && assetCount > 0 && /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "text-[10px] bg-green-500/10 text-green-400 px-1.5 py-0.5 rounded uppercase tracking-wider", children: "Generated" })
     ] }),
     hasSocial && assetCount > 0 && /* @__PURE__ */ jsxRuntimeExports.jsx("button", { onClick: () => setScreen("socialPreview"), className: "px-4 py-2 bg-purple-500/20 text-purple-200 border border-purple-400/40 rounded-lg text-sm hover:bg-purple-500/30", children: "Open Full Social Pack Preview" }),
     /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "grid grid-cols-3 gap-2", children: (() => {
-      const specs = socialResults?.assetSpecs;
-      const displaySpecs = specs && specs.length > 0 ? specs : campaign.campaignGoal === "invite_attendance" || campaign.campaignGoal === "promote_livestream" || campaign.campaignGoal === "announce_event" ? [
-        { assetRole: "main_invitation", platform: "facebook", format: "wide_banner" },
-        { assetRole: "quote_teaser", platform: "instagram", format: "feed_portrait" },
-        { assetRole: "story_invitation", platform: "instagram", format: "story" },
-        { assetRole: "engagement_question", platform: "instagram", format: "story" },
-        { assetRole: "youtube_thumbnail", platform: "youtube", format: "thumbnail" },
-        { assetRole: "whatsapp_invite", platform: "whatsapp", format: "status" }
-      ] : [
-        { assetRole: "devotional_quote", platform: "instagram", format: "feed_portrait" },
-        { assetRole: "reflection_question", platform: "instagram", format: "story" },
-        { assetRole: "encouragement_card", platform: "instagram", format: "story" },
-        { assetRole: "scripture_reminder", platform: "instagram", format: "feed_portrait" },
-        { assetRole: "whatsapp_share", platform: "whatsapp", format: "status" }
-      ];
+      const displaySpecs = socialResults?.assets?.length ? socialResults.assets : [];
       return displaySpecs.slice(0, Math.max(assetCount || displaySpecs.length, 6)).map((s, i) => {
-        const roleLabel = ASSET_ROLE_LABELS[s.assetRole] || (s.assetRole || "asset").replace(/_/g, " ");
+        const roleLabel = labelSocialAssetRole(s.role);
         const platformIcon = { instagram: "📱", facebook: "📘", youtube: "▶️", whatsapp: "💬" };
         return /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "bg-white/5 border border-white/10 rounded-lg p-2.5 space-y-1 hover:border-white/20 transition-all", children: [
           /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-center justify-between", children: [
             /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { className: "text-[10px] text-gray-500 uppercase tracking-wider", children: [
               platformIcon[s.platform] || "",
               " ",
-              s.platform
+              s.platformLabel || s.platform
             ] }),
             /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "text-[9px] bg-green-500/10 text-green-400 px-1 rounded", children: "Ready" })
           ] }),
           /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-xs text-gray-300 font-medium capitalize", children: roleLabel }),
-          /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-[10px] text-gray-600", children: s.format?.replace(/_/g, " ") || "" })
+          /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-[10px] text-gray-600", children: humanize(s.format) || "" })
         ] }, i);
       });
     })() })
@@ -12030,16 +12244,14 @@ function CaptionsTab({ campaign }) {
     }).catch(() => {
     });
   };
-  const roles = ["Main Invitation", "Quote Teaser", "Story Invitation", "Engagement Question"];
-  const platforms = ["Facebook/Instagram", "Instagram", "Instagram Story", "Instagram Story"];
   return /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "space-y-4", children: [
     /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-center gap-2", children: [
       /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-sm text-gray-400", children: hasCaptions ? `Caption Package — ${captionResults.length} captions` : "No captions generated" }),
       hasCaptions && /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "text-[10px] bg-green-500/10 text-green-400 px-1.5 py-0.5 rounded uppercase tracking-wider", children: "Generated" })
     ] }),
     hasCaptions ? /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "grid grid-cols-2 gap-3", children: captionResults.map((c, i) => {
-      const role = roles[i] || `Caption ${i + 1}`;
-      const platform2 = platforms[i] || "Social";
+      const role = c.roleLabel || labelSocialAssetRole(c.role) || `Caption ${i + 1}`;
+      const platform2 = c.platformLabel || c.platform || "Social";
       const caption = c.longCaption || c.caption || "";
       const cta = c.cta || campaign.cta || "";
       const hashtags = c.hashtags || [];
@@ -12073,11 +12285,10 @@ function CaptionsTab({ campaign }) {
   ] });
 }
 function ExportsTab({ setScreen, campaign }) {
-  const deckResults = campaign.deckResults;
-  const socialResults = campaign.socialResults;
-  const slideCount = deckResults?.slideCount || 0;
-  const assetCount = socialResults?.assetCount || 0;
-  const captionCount = campaign.captionResults?.length || 0;
+  const view = selectCampaignViewModel(campaign);
+  const slideCount = view.summary.counts.slides;
+  const assetCount = view.summary.counts.socialAssets;
+  const captionCount = view.summary.counts.captions;
   const totalFiles = slideCount + assetCount + captionCount + 5;
   return /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "space-y-4", children: [
     /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-center gap-2", children: [
@@ -12229,7 +12440,7 @@ function SlideCanvas({ slide }) {
           slide.bodyLines?.slice(0, 2).map((line, i) => /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-sm opacity-40 mt-3 italic max-w-md", style: { color: style.subtext }, children: line }, i))
         ] }),
         !isTitle && !isScripture && !isContext && !isPoint && !isApplication && !isReflection && !isInvitation && !isClosing && /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "relative z-10 flex-1 flex flex-col items-center justify-center px-12 py-10 text-center", children: [
-          /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-xs uppercase tracking-[0.2em] opacity-40 mb-4", style: { color: style.subtext }, children: purpose.replace(/_/g, " ") }),
+          /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-xs uppercase tracking-[0.2em] opacity-40 mb-4", style: { color: style.subtext }, children: humanize(purpose) }),
           /* @__PURE__ */ jsxRuntimeExports.jsx("h2", { className: "text-2xl lg:text-3xl font-bold leading-snug max-w-lg", style: { color: style.text }, children: slide.headline }),
           /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "w-12 h-0.5 mx-auto mt-4 rounded-full opacity-30", style: { background: style.accent } })
         ] }),
@@ -12250,18 +12461,18 @@ function SlidePreviewScreen() {
     api.getCampaignSlides(campaign.campaignId).then(setSlideData).catch(async () => {
       try {
         const fc2 = await api.getCampaign(campaign.campaignId);
-        setSlideData({ slides: fc2?.deckResults?.slides || [] });
+        setSlideData({ slides: fc2?.generatedMedia?.deck?.slides || [] });
       } catch {
       }
     });
   }, [campaign.campaignId, backendUrl]);
-  const deckResults = campaign.deckResults;
+  const view = selectCampaignViewModel(campaign);
   const apiSlides = slideData?.slides || [];
-  const storeSlides = deckResults?.slides || [];
+  const storeSlides = view.generatedMedia.deck?.slides || [];
   const rawSlides = apiSlides.length > 0 ? apiSlides : storeSlides;
   const slides = React$2.useMemo(() => {
     if (rawSlides.length > 0) {
-      const passage = campaign.passageOrTopic || "";
+      const passage = view.summary.passageOrTopic || "";
       return rawSlides.map((s) => ({
         index: s.index,
         purpose: s.purpose || "content",
@@ -12276,9 +12487,9 @@ function SlidePreviewScreen() {
       }));
     }
     return [];
-  }, [rawSlides]);
+  }, [rawSlides, view.summary.passageOrTopic]);
   const selected = slides[selectedIndex];
-  const quality = deckResults?.quality || slideData?.quality;
+  const quality = view.generatedMedia.deck?.quality || slideData?.quality;
   return /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "max-w-6xl mx-auto space-y-6", children: [
     /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-center justify-between", children: [
       /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { children: [
@@ -12307,7 +12518,7 @@ function SlidePreviewScreen() {
                 ),
                 /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "min-w-0", children: [
                   /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "font-semibold text-gray-200 truncate text-[11px]", children: slide.headline }),
-                  /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-gray-500 truncate text-[10px] capitalize", children: slide.purpose.replace(/_/g, " ") })
+                  /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-gray-500 truncate text-[10px] capitalize", children: humanize(slide.purpose) })
                 ] })
               ] })
             },
@@ -12325,11 +12536,11 @@ function SlidePreviewScreen() {
         /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "grid grid-cols-4 gap-3 text-xs", children: [
           /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "bg-white/5 border border-white/10 rounded-lg p-3", children: [
             /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-gray-500 uppercase tracking-wider mb-0.5", children: "Purpose" }),
-            /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-gray-200 font-medium capitalize", children: selected.purpose.replace(/_/g, " ") })
+            /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-gray-200 font-medium capitalize", children: humanize(selected.purpose) })
           ] }),
           /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "bg-white/5 border border-white/10 rounded-lg p-3", children: [
             /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-gray-500 uppercase tracking-wider mb-0.5", children: "Layout" }),
-            /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-gray-200 font-medium", children: LAYOUT_FAMILY_LABELS[selected.layoutFamily] || selected.layoutFamily.replace(/_/g, " ") })
+            /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-gray-200 font-medium", children: labelLayoutFamily(selected.layoutFamily) })
           ] }),
           /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "bg-white/5 border border-white/10 rounded-lg p-3", children: [
             /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-gray-500 uppercase tracking-wider mb-0.5", children: "Visual" }),
@@ -12410,6 +12621,45 @@ const platformMeta = {
   x: { label: "X", color: "#1DA1F2", bg: "from-sky-900/30 to-blue-800/20", icon: "𝕏" }
 };
 function buildAssetDataFromCampaign(campaign, apiAssets) {
+  if (apiAssets && apiAssets.length > 0) {
+    return apiAssets.map((asset) => ({
+      id: asset.id.slice(0, 8),
+      platform: asset.platform,
+      format: asset.format,
+      width: asset.width,
+      height: asset.height,
+      role: asset.role || asset.roleLabel || "social_asset",
+      layoutFamily: asset.layoutFamily || "invitation_card",
+      imageRole: asset.imageRole || "worship backdrop",
+      headline: asset.caption?.split("\n")[0]?.slice(0, 80) || asset.title || asset.roleLabel || `Asset ${asset.id.slice(0, 4)}`,
+      imageUrl: asset.imageUrl || void 0,
+      caption: asset.caption || "",
+      cta: asset.cta || "",
+      qualityScore: asset.quality?.score || campaign.qualityResults?.score || 85,
+      warnings: asset.quality?.warnings || campaign.qualityResults?.warnings || [],
+      status: asset.status === "ready" ? "ready" : "draft"
+    }));
+  }
+  const normalizedAssets = campaign.socialResults?.assets || [];
+  if (normalizedAssets.length > 0) {
+    return normalizedAssets.map((asset) => ({
+      id: asset.id.slice(0, 8),
+      platform: asset.platform,
+      format: asset.format,
+      width: asset.width,
+      height: asset.height,
+      role: asset.role || asset.roleLabel || "social_asset",
+      layoutFamily: asset.layoutFamily || "invitation_card",
+      imageRole: asset.imageRole || "worship backdrop",
+      headline: asset.caption?.split("\n")[0]?.slice(0, 80) || asset.title || asset.roleLabel || `Asset ${asset.id.slice(0, 4)}`,
+      imageUrl: asset.imageUrl || void 0,
+      caption: asset.caption || "",
+      cta: asset.cta || "",
+      qualityScore: asset.quality?.score || campaign.qualityResults?.score || 85,
+      warnings: asset.quality?.warnings || campaign.qualityResults?.warnings || [],
+      status: asset.status === "ready" ? "ready" : "draft"
+    }));
+  }
   const captionResults = campaign.captionResults || [];
   const socialResults = campaign.socialResults;
   const assetIds = socialResults?.assetIds || [];
@@ -12453,7 +12703,7 @@ function buildAssetDataFromCampaign(campaign, apiAssets) {
         imageRole: spec.imageRole,
         headline: lines[0]?.slice(0, 80) || campaign.title || `Asset ${i + 1}`,
         imageUrl: apiData?.imageUrl || void 0,
-        caption: caption.longCaption || preview || "",
+        caption: caption.longCaption || caption.caption || preview || "",
         cta: caption.cta || "",
         qualityScore: campaign.qualityResults?.score || 85,
         warnings: campaign.qualityResults?.warnings || [],
@@ -12526,7 +12776,7 @@ function AssetCard({ asset }) {
               style: { background: meta.color + "88", color: "#fff", border: `1px solid ${meta.color}` },
               children: [
                 /* @__PURE__ */ jsxRuntimeExports.jsx("span", { children: meta.icon }),
-                /* @__PURE__ */ jsxRuntimeExports.jsx("span", { children: meta.label })
+                /* @__PURE__ */ jsxRuntimeExports.jsx("span", { children: labelSocialPlatform(asset.platform) || meta.label })
               ]
             }
           ),
@@ -12536,7 +12786,7 @@ function AssetCard({ asset }) {
     ),
     /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "p-3 space-y-2 flex-1 flex flex-col", children: [
       /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-center justify-between", children: [
-        /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "text-[11px] font-semibold text-gray-200 capitalize", children: asset.role.replace(/_/g, " ") }),
+        /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "text-[11px] font-semibold text-gray-200 capitalize", children: labelSocialAssetRole(asset.role) || asset.role.replace(/_/g, " ") }),
         /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: `text-[10px] px-1.5 py-0.5 rounded font-medium ${asset.status === "ready" ? "bg-green-500/10 text-green-400" : "bg-white/5 text-gray-500"}`, children: asset.status === "ready" ? "Ready" : "Draft" })
       ] }),
       /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-xs text-gray-300 line-clamp-2", children: asset.headline }),
@@ -12585,7 +12835,7 @@ function AssetCard({ asset }) {
         ] }),
         /* @__PURE__ */ jsxRuntimeExports.jsxs("p", { className: "text-gray-600", children: [
           "Image: ",
-          asset.imageRole,
+          humanize(asset.imageRole),
           " · ",
           asset.width,
           "×",
@@ -12601,8 +12851,9 @@ function SocialPackPreviewScreen() {
   const { setScreen, campaign, backendUrl } = useAppStore();
   const [activeTab, setActiveTab] = reactExports.useState("all");
   const [socialData, setSocialData] = reactExports.useState(null);
-  const socialResults = campaign.socialResults;
-  const hasSocial = campaign.outputSelections?.socialPack && (socialResults?.assetCount > 0 || socialResults?.assetIds?.length > 0);
+  const view = selectCampaignViewModel(campaign);
+  const socialResults = view.generatedMedia.socialPack;
+  const hasSocial = campaign.outputSelections?.socialPack && (socialResults?.assetCount > 0 || socialResults?.assets?.length > 0);
   reactExports.useEffect(() => {
     if (!campaign.campaignId || !hasSocial) return;
     const api = createApiClient(backendUrl);
@@ -12618,7 +12869,7 @@ function SocialPackPreviewScreen() {
     /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-center justify-between", children: [
       /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { children: [
         /* @__PURE__ */ jsxRuntimeExports.jsx("h2", { className: "text-2xl font-bold", children: "Social Pack Preview" }),
-        /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-sm text-gray-500 mt-1", children: assets.length > 0 ? `${assets.length} assets · ${mode.replace(/_/g, " ")} · ${platforms.length} platforms` : "Fetching social assets..." })
+        /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-sm text-gray-500 mt-1", children: assets.length > 0 ? `${assets.length} assets · ${labelSocialMode(mode)} · ${platforms.length} platforms` : "Fetching social assets..." })
       ] }),
       assets.length > 0 && /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "text-[10px] bg-green-500/10 text-green-400 px-2 py-1 rounded border border-green-500/20 uppercase tracking-wider", children: "Generated" })
     ] }),
@@ -12636,7 +12887,7 @@ function SocialPackPreviewScreen() {
         }
       ),
       platforms.map((p2) => {
-        const m2 = platformMeta[p2] || { label: p2, color: "#888" };
+        const m2 = platformMeta[p2] || { label: labelSocialPlatform(p2) || p2, color: "#888" };
         return /* @__PURE__ */ jsxRuntimeExports.jsxs(
           "button",
           {
@@ -12693,6 +12944,7 @@ function FileRow({ name, desc }) {
 }
 function ExportScreen() {
   const { setScreen, campaign, backendUrl } = useAppStore();
+  const view = selectCampaignViewModel(campaign);
   const [selected, setSelected] = reactExports.useState(["pptx", "pdf", "png", "zip"]);
   const [exporting, setExporting] = reactExports.useState(false);
   const [exportDone, setExportDone] = reactExports.useState(false);
@@ -12714,13 +12966,10 @@ function ExportScreen() {
       setExporting(false);
     }
   };
-  const deckResults = campaign.deckResults;
-  const socialResults = campaign.socialResults;
-  const captionResults = campaign.captionResults;
-  const slideCount = deckResults?.slideCount || 0;
-  const assetCount = socialResults?.assetCount || 0;
-  const captionCount = captionResults?.length || 0;
-  const assetIds = socialResults?.assetIds || [];
+  const slideCount = view.summary.counts.slides;
+  const assetCount = view.summary.counts.socialAssets;
+  const captionCount = view.summary.counts.captions;
+  const assetIds = view.generatedMedia.socialPack?.assets?.map((asset) => asset.id) || [];
   return /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "max-w-3xl mx-auto space-y-6", children: [
     /* @__PURE__ */ jsxRuntimeExports.jsx("h2", { className: "text-2xl font-bold", children: "Export Center" }),
     /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "bg-white/3 border border-white/5 rounded-xl p-4 space-y-3", children: [
@@ -12789,7 +13038,7 @@ function ExportScreen() {
         /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "bg-black/20 rounded-lg p-3", children: [
           /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-gray-500", children: "ZIP filename" }),
           /* @__PURE__ */ jsxRuntimeExports.jsxs("p", { className: "text-gray-200 font-mono", children: [
-            campaign.title?.replace(/\s+/g, "-").toLowerCase() || "campaign",
+            view.summary.title?.replace(/\s+/g, "-").toLowerCase() || "campaign",
             "-export.zip"
           ] })
         ] }),
@@ -13326,26 +13575,23 @@ function CheckboxGroup({ label, selected, options, onChange }) {
 }
 function SummaryPanel() {
   const { campaign } = useAppStore();
-  campaign.analysis;
-  const deckResults = campaign.deckResults;
-  const socialResults = campaign.socialResults;
-  const captionResults = campaign.captionResults;
+  const view = selectCampaignViewModel(campaign);
   return /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "space-y-4", children: [
     /* @__PURE__ */ jsxRuntimeExports.jsx("h3", { className: "text-lg font-semibold", children: "Campaign Summary" }),
     /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "grid grid-cols-2 gap-3", children: [
-      /* @__PURE__ */ jsxRuntimeExports.jsx(InfoCard, { label: "Title", value: campaign.title || "Untitled" }),
-      /* @__PURE__ */ jsxRuntimeExports.jsx(InfoCard, { label: "Type", value: CAMPAIGN_TYPE_LABELS[campaign.campaignType] || campaign.campaignType || "Not set" }),
-      /* @__PURE__ */ jsxRuntimeExports.jsx(InfoCard, { label: "Goal", value: CAMPAIGN_GOAL_LABELS[campaign.campaignGoal] || campaign.campaignGoal || "Not set" }),
-      /* @__PURE__ */ jsxRuntimeExports.jsx(InfoCard, { label: "Status", value: campaign.status || "draft" }),
-      /* @__PURE__ */ jsxRuntimeExports.jsx(InfoCard, { label: "Passage", value: campaign.passageOrTopic || "—" }),
-      /* @__PURE__ */ jsxRuntimeExports.jsx(InfoCard, { label: "Tone", value: campaign.tone || "—" }),
-      /* @__PURE__ */ jsxRuntimeExports.jsx(InfoCard, { label: "CTA", value: campaign.cta || "—" }),
-      /* @__PURE__ */ jsxRuntimeExports.jsx(InfoCard, { label: "Language", value: campaign.language === "en" ? "English" : "Español" })
+      /* @__PURE__ */ jsxRuntimeExports.jsx(InfoCard, { label: "Title", value: view.summary.title || "Untitled" }),
+      /* @__PURE__ */ jsxRuntimeExports.jsx(InfoCard, { label: "Type", value: view.summary.typeLabel || "Not set" }),
+      /* @__PURE__ */ jsxRuntimeExports.jsx(InfoCard, { label: "Goal", value: view.summary.goalLabel || "Not set" }),
+      /* @__PURE__ */ jsxRuntimeExports.jsx(InfoCard, { label: "Status", value: labelCampaignStatus(campaign.status) }),
+      /* @__PURE__ */ jsxRuntimeExports.jsx(InfoCard, { label: "Passage", value: view.summary.passageOrTopic || "—" }),
+      /* @__PURE__ */ jsxRuntimeExports.jsx(InfoCard, { label: "Main Message", value: view.summary.mainMessage || "—" }),
+      /* @__PURE__ */ jsxRuntimeExports.jsx(InfoCard, { label: "CTA", value: view.summary.cta || "—" }),
+      /* @__PURE__ */ jsxRuntimeExports.jsx(InfoCard, { label: "Language", value: labelLanguage(campaign.language) })
     ] }),
     /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "grid grid-cols-3 gap-3", children: [
-      /* @__PURE__ */ jsxRuntimeExports.jsx(StatCard, { label: "Slides", value: deckResults?.slideCount || 0 }),
-      /* @__PURE__ */ jsxRuntimeExports.jsx(StatCard, { label: "Social Assets", value: socialResults?.assetCount || socialResults?.assetIds?.length || 0 }),
-      /* @__PURE__ */ jsxRuntimeExports.jsx(StatCard, { label: "Captions", value: captionResults?.length || 0 })
+      /* @__PURE__ */ jsxRuntimeExports.jsx(StatCard, { label: "Slides", value: view.summary.counts.slides }),
+      /* @__PURE__ */ jsxRuntimeExports.jsx(StatCard, { label: "Social Assets", value: view.summary.counts.socialAssets }),
+      /* @__PURE__ */ jsxRuntimeExports.jsx(StatCard, { label: "Captions", value: view.summary.counts.captions })
     ] }),
     campaign.mainMessage && /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "bg-white/5 border border-white/10 rounded-lg p-3", children: [
       /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-xs text-gray-500 uppercase tracking-wider mb-1", children: "Main Message" }),
@@ -13514,12 +13760,12 @@ function CaptionsPanel() {
         ] }),
         /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "text-[10px] px-2 py-0.5 rounded bg-purple-500/10 text-purple-300", children: caption.cta || "No CTA" })
       ] }),
-      /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-sm text-gray-300 whitespace-pre-wrap", children: caption.longCaption || caption.captionPreview }),
+      /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-sm text-gray-300 whitespace-pre-wrap", children: caption.longCaption || caption.caption || caption.captionPreview }),
       caption.hashtags?.length > 0 && /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "flex flex-wrap gap-1", children: caption.hashtags.map((tag) => /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "text-[10px] text-purple-400 bg-purple-500/10 px-1.5 py-0.5 rounded", children: tag }, tag)) }),
       /* @__PURE__ */ jsxRuntimeExports.jsx(
         "button",
         {
-          onClick: () => navigator.clipboard.writeText(caption.longCaption || caption.captionPreview || ""),
+          onClick: () => navigator.clipboard.writeText(caption.longCaption || caption.caption || caption.captionPreview || ""),
           className: "text-[10px] text-gray-500 hover:text-gray-300 transition-colors",
           children: "Copy caption"
         }

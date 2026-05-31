@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { useAppStore } from '../lib/store';
 import { createApiClient } from '../lib/api';
+import { humanize, labelSocialAssetRole, labelSocialMode, labelSocialPlatform } from '../lib/labels';
+import { selectCampaignViewModel } from '../lib/campaign-view-model';
 
 interface SocialAssetData {
   id: string;
@@ -28,14 +30,48 @@ const platformMeta: Record<string, { label: string; color: string; bg: string; i
   x:         { label: 'X',         color: '#1DA1F2', bg: 'from-sky-900/30 to-blue-800/20',   icon: '𝕏' },
 };
 
-const dimensionLabels: Record<string, string> = {
-  '1200×630': 'Landscape (FB/YT)',
-  '1080×1350': 'Portrait (IG Feed)',
-  '1080×1920': 'Story (IG/WA)',
-  '1280×720': 'Thumbnail (YT)',
-};
-
 function buildAssetDataFromCampaign(campaign: any, apiAssets?: any[]): SocialAssetData[] {
+  if (apiAssets && apiAssets.length > 0) {
+    return apiAssets.map((asset: any) => ({
+      id: asset.id.slice(0, 8),
+      platform: asset.platform,
+      format: asset.format,
+      width: asset.width,
+      height: asset.height,
+      role: asset.role || asset.roleLabel || 'social_asset',
+      layoutFamily: asset.layoutFamily || 'invitation_card',
+      imageRole: asset.imageRole || 'worship backdrop',
+      headline: asset.caption?.split('\n')[0]?.slice(0, 80) || asset.title || asset.roleLabel || `Asset ${asset.id.slice(0, 4)}`,
+      imageUrl: asset.imageUrl || undefined,
+      caption: asset.caption || '',
+      cta: asset.cta || '',
+      qualityScore: asset.quality?.score || campaign.qualityResults?.score || 85,
+      warnings: asset.quality?.warnings || campaign.qualityResults?.warnings || [],
+      status: asset.status === 'ready' ? 'ready' : 'draft',
+    }));
+  }
+
+  const normalizedAssets = campaign.socialResults?.assets || [];
+  if (normalizedAssets.length > 0) {
+    return normalizedAssets.map((asset: any) => ({
+      id: asset.id.slice(0, 8),
+      platform: asset.platform,
+      format: asset.format,
+      width: asset.width,
+      height: asset.height,
+      role: asset.role || asset.roleLabel || 'social_asset',
+      layoutFamily: asset.layoutFamily || 'invitation_card',
+      imageRole: asset.imageRole || 'worship backdrop',
+      headline: asset.caption?.split('\n')[0]?.slice(0, 80) || asset.title || asset.roleLabel || `Asset ${asset.id.slice(0, 4)}`,
+      imageUrl: asset.imageUrl || undefined,
+      caption: asset.caption || '',
+      cta: asset.cta || '',
+      qualityScore: asset.quality?.score || campaign.qualityResults?.score || 85,
+      warnings: asset.quality?.warnings || campaign.qualityResults?.warnings || [],
+      status: asset.status === 'ready' ? 'ready' : 'draft',
+    }));
+  }
+
   const captionResults = (campaign.captionResults || []) as any[];
   const socialResults = campaign.socialResults as any;
   const assetIds: string[] = socialResults?.assetIds || [];
@@ -89,7 +125,7 @@ function buildAssetDataFromCampaign(campaign: any, apiAssets?: any[]): SocialAss
         imageRole: spec.imageRole,
         headline: lines[0]?.slice(0, 80) || campaign.title || `Asset ${i + 1}`,
         imageUrl: apiData?.imageUrl || undefined,
-        caption: caption.longCaption || preview || '',
+        caption: caption.longCaption || caption.caption || preview || '',
         cta: caption.cta || '',
         qualityScore: campaign.qualityResults?.score || 85,
         warnings: campaign.qualityResults?.warnings || [],
@@ -167,7 +203,7 @@ function AssetCard({ asset }: { asset: SocialAssetData }) {
         <div className="absolute top-3 left-3 flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-semibold z-10"
           style={{ background: meta.color + '88', color: '#fff', border: `1px solid ${meta.color}` }}>
           <span>{meta.icon}</span>
-          <span>{meta.label}</span>
+          <span>{labelSocialPlatform(asset.platform) || meta.label}</span>
         </div>
         {/* Format badge */}
         <div className="absolute top-3 right-3 px-2 py-0.5 rounded text-[9px] bg-black/60 text-white uppercase tracking-wider z-10">
@@ -178,7 +214,7 @@ function AssetCard({ asset }: { asset: SocialAssetData }) {
       {/* Info + Actions */}
       <div className="p-3 space-y-2 flex-1 flex flex-col">
         <div className="flex items-center justify-between">
-          <span className="text-[11px] font-semibold text-gray-200 capitalize">{asset.role.replace(/_/g, ' ')}</span>
+          <span className="text-[11px] font-semibold text-gray-200 capitalize">{labelSocialAssetRole(asset.role) || asset.role.replace(/_/g, ' ')}</span>
           <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${asset.status === 'ready' ? 'bg-green-500/10 text-green-400' : 'bg-white/5 text-gray-500'}`}>
             {asset.status === 'ready' ? 'Ready' : 'Draft'}
           </span>
@@ -205,7 +241,7 @@ function AssetCard({ asset }: { asset: SocialAssetData }) {
         {showDetails && (
           <div className="space-y-1.5 pt-1 border-t border-white/5 text-[10px]">
             {asset.caption && <p className="text-gray-400"><span className="text-gray-500">Caption: </span>{asset.caption.slice(0, 200)}</p>}
-            <p className="text-gray-600">Image: {asset.imageRole} · {asset.width}×{asset.height} · Q: {asset.qualityScore}</p>
+            <p className="text-gray-600">Image: {humanize(asset.imageRole)} · {asset.width}×{asset.height} · Q: {asset.qualityScore}</p>
           </div>
         )}
       </div>
@@ -217,9 +253,10 @@ export default function SocialPackPreviewScreen() {
   const { setScreen, campaign, backendUrl } = useAppStore();
   const [activeTab, setActiveTab] = useState('all');
   const [socialData, setSocialData] = useState<any>(null);
+  const view = selectCampaignViewModel(campaign);
 
-  const socialResults = campaign.socialResults as any;
-  const hasSocial = campaign.outputSelections?.socialPack && (socialResults?.assetCount > 0 || socialResults?.assetIds?.length > 0);
+  const socialResults = view.generatedMedia.socialPack;
+  const hasSocial = campaign.outputSelections?.socialPack && (socialResults?.assetCount > 0 || socialResults?.assets?.length > 0);
 
   useEffect(() => {
     if (!campaign.campaignId || !hasSocial) return;
@@ -242,7 +279,7 @@ export default function SocialPackPreviewScreen() {
           <h2 className="text-2xl font-bold">Social Pack Preview</h2>
           <p className="text-sm text-gray-500 mt-1">
             {assets.length > 0
-              ? `${assets.length} assets · ${mode.replace(/_/g, ' ')} · ${platforms.length} platforms`
+              ? `${assets.length} assets · ${labelSocialMode(mode)} · ${platforms.length} platforms`
               : 'Fetching social assets...'}
           </p>
         </div>
@@ -264,7 +301,7 @@ export default function SocialPackPreviewScreen() {
           All ({assets.length})
         </button>
         {platforms.map(p => {
-          const m = platformMeta[p] || { label: p, color: '#888' };
+          const m = platformMeta[p] || { label: labelSocialPlatform(p) || p, color: '#888' };
           return (
             <button key={p} onClick={() => setActiveTab(p)}
               className={`px-3 py-1.5 rounded-lg text-xs transition-all capitalize ${

@@ -2,6 +2,7 @@ import React from 'react';
 import { useAppStore } from '../lib/store';
 import { createApiClient } from '../lib/api';
 import { PRESETS } from '../lib/presets';
+import { humanize } from '../lib/labels';
 
 export default function OutputsScreen() {
   const { setScreen, campaign, updateCampaign, backendUrl } = useAppStore();
@@ -71,7 +72,7 @@ export default function OutputsScreen() {
               <label className="text-xs text-gray-500 uppercase tracking-wider block mb-1">Deck Type</label>
               <select value={deckType} onChange={(e) => setDeckType(e.target.value)} className="w-full bg-gray-900 border border-white/10 rounded-lg px-3 py-2 text-sm">
                 <option value="auto">Auto (based on campaign)</option>
-                {deckTypes.map(dt => <option key={dt} value={dt}>{dt.replace(/_/g, ' ')}</option>)}
+                {deckTypes.map(dt => <option key={dt} value={dt}>{humanize(dt)}</option>)}
               </select>
             </div>
             <div>

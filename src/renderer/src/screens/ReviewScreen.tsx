@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useAppStore, type AppScreen } from '../lib/store';
-import { SOCIAL_MODE_LABELS, CAMPAIGN_TYPE_LABELS, CAMPAIGN_GOAL_LABELS, ASSET_ROLE_LABELS, OUTPUT_LABELS } from '../lib/labels';
+import { OUTPUT_LABELS, humanize, labelLayoutFamily, labelSocialAssetRole, labelSocialMode } from '../lib/labels';
+import { selectCampaignViewModel } from '../lib/campaign-view-model';
 
 type ReviewTab = 'overview' | 'slides' | 'social' | 'captions' | 'exports' | 'warnings';
 
@@ -48,19 +49,18 @@ export default function ReviewScreen() {
 }
 
 function OverviewTab({ campaign }: { campaign: any }) {
-  const typeLabel = CAMPAIGN_TYPE_LABELS[campaign.campaignType] || campaign.campaignType;
-  const goalLabel = CAMPAIGN_GOAL_LABELS[campaign.campaignGoal] || campaign.campaignGoal;
+  const view = selectCampaignViewModel(campaign);
   const items = [
-    ['Campaign Type', typeLabel],
-    ['Goal', goalLabel],
-    ['Title', campaign.title],
-    ['Main Message', campaign.mainMessage],
-    ['Language', campaign.language === 'en' ? 'English' : 'Español'],
+    ['Campaign Type', view.summary.typeLabel],
+    ['Goal', view.summary.goalLabel],
+    ['Title', view.summary.title],
+    ['Main Message', view.summary.mainMessage],
+    ['Language', view.summary.languageLabel],
     ['Tone', campaign.tone || '—'],
-    ['CTA', campaign.cta || '—'],
+    ['CTA', view.summary.cta || '—'],
     ['Outputs', Object.entries(campaign.outputSelections || {}).filter(([,v]) => v).map(([k]) => OUTPUT_LABELS[k] || k).join(', ') || '—'],
-    ['Event Date', campaign.eventDetails?.date || '—'],
-    ['Location', campaign.eventDetails?.locationName || '—'],
+    ['Event Date', view.summary.eventDetails?.date || '—'],
+    ['Location', view.summary.eventDetails?.locationName || '—'],
   ];
   return (
     <div className="grid grid-cols-2 gap-4">
@@ -76,9 +76,10 @@ function OverviewTab({ campaign }: { campaign: any }) {
 
 function SlidesTab({ setScreen, campaign }: { setScreen: (s: AppScreen) => void; campaign: any }) {
   const hasDeck = campaign.outputSelections?.presentationDeck;
-  const deckResults = campaign.deckResults as any;
+  const view = selectCampaignViewModel(campaign);
+  const deckResults = view.generatedMedia.deck;
   const slideCount = deckResults?.slideCount || 0;
-  const layouts = deckResults?.layouts || 0;
+  const layouts = new Set(deckResults?.slides?.map((s) => s.layoutFamily)).size;
   const deckQuality = deckResults?.quality;
   return (
     <div className="space-y-4">
@@ -118,7 +119,7 @@ function SlidesTab({ setScreen, campaign }: { setScreen: (s: AppScreen) => void;
           ['title_cinematic','scripture_focus','big_idea_statement','point_declaration','split_tension','application_steps','appeal_invitation','closing_blessing'].map((l, i) => (
             <div key={i} className="bg-white/5 border border-white/10 rounded-lg p-2 text-center">
               <p className="text-xs text-gray-400">{i+1}</p>
-              <p className="text-xs text-gray-600 truncate">{l.replace(/_/g, ' ')}</p>
+              <p className="text-xs text-gray-600 truncate">{labelLayoutFamily(l)}</p>
             </div>
           ))
         )}
@@ -129,14 +130,15 @@ function SlidesTab({ setScreen, campaign }: { setScreen: (s: AppScreen) => void;
 
 function SocialTab({ setScreen, campaign }: { setScreen: (s: AppScreen) => void; campaign: any }) {
   const hasSocial = campaign.outputSelections?.socialPack;
-  const socialResults = campaign.socialResults as any;
+  const view = selectCampaignViewModel(campaign);
+  const socialResults = view.generatedMedia.socialPack;
   const assetCount = socialResults?.assetCount || 0;
   const socialMode = socialResults?.mode || 'unknown';
   return (
     <div className="space-y-4">
       <div className="flex items-center gap-2">
         <p className="text-sm text-gray-400">
-          {hasSocial ? (assetCount > 0 ? `${assetCount} assets · ${SOCIAL_MODE_LABELS[socialMode] || socialMode}` : 'Social pack generation in progress...') : 'Social pack was not selected.'}
+          {hasSocial ? (assetCount > 0 ? `${assetCount} assets · ${labelSocialMode(socialMode) || socialMode}` : 'Social pack generation in progress...') : 'Social pack was not selected.'}
         </p>
         {hasSocial && assetCount > 0 && <span className="text-[10px] bg-green-500/10 text-green-400 px-1.5 py-0.5 rounded uppercase tracking-wider">Generated</span>}
       </div>
@@ -147,36 +149,18 @@ function SocialTab({ setScreen, campaign }: { setScreen: (s: AppScreen) => void;
       )}
       <div className="grid grid-cols-3 gap-2">
         {(() => {
-          const specs = socialResults?.assetSpecs as any[] | undefined;
-          const displaySpecs = (specs && specs.length > 0) ? specs : (
-            campaign.campaignGoal === 'invite_attendance' || campaign.campaignGoal === 'promote_livestream' || campaign.campaignGoal === 'announce_event'
-              ? [
-                  { assetRole: 'main_invitation', platform: 'facebook', format: 'wide_banner' },
-                  { assetRole: 'quote_teaser', platform: 'instagram', format: 'feed_portrait' },
-                  { assetRole: 'story_invitation', platform: 'instagram', format: 'story' },
-                  { assetRole: 'engagement_question', platform: 'instagram', format: 'story' },
-                  { assetRole: 'youtube_thumbnail', platform: 'youtube', format: 'thumbnail' },
-                  { assetRole: 'whatsapp_invite', platform: 'whatsapp', format: 'status' },
-                ]
-              : [
-                  { assetRole: 'devotional_quote', platform: 'instagram', format: 'feed_portrait' },
-                  { assetRole: 'reflection_question', platform: 'instagram', format: 'story' },
-                  { assetRole: 'encouragement_card', platform: 'instagram', format: 'story' },
-                  { assetRole: 'scripture_reminder', platform: 'instagram', format: 'feed_portrait' },
-                  { assetRole: 'whatsapp_share', platform: 'whatsapp', format: 'status' },
-                ]
-          );
+          const displaySpecs = socialResults?.assets?.length ? socialResults.assets : [];
           return displaySpecs.slice(0, Math.max(assetCount || displaySpecs.length, 6)).map((s: any, i: number) => {
-            const roleLabel = ASSET_ROLE_LABELS[s.assetRole] || (s.assetRole || 'asset').replace(/_/g, ' ');
+            const roleLabel = labelSocialAssetRole(s.role);
             const platformIcon: Record<string, string> = { instagram: '📱', facebook: '📘', youtube: '▶️', whatsapp: '💬' };
             return (
               <div key={i} className="bg-white/5 border border-white/10 rounded-lg p-2.5 space-y-1 hover:border-white/20 transition-all">
                 <div className="flex items-center justify-between">
-                  <span className="text-[10px] text-gray-500 uppercase tracking-wider">{platformIcon[s.platform] || ''} {s.platform}</span>
+                  <span className="text-[10px] text-gray-500 uppercase tracking-wider">{platformIcon[s.platform] || ''} {s.platformLabel || s.platform}</span>
                   <span className="text-[9px] bg-green-500/10 text-green-400 px-1 rounded">Ready</span>
                 </div>
                 <p className="text-xs text-gray-300 font-medium capitalize">{roleLabel}</p>
-                <p className="text-[10px] text-gray-600">{s.format?.replace(/_/g, ' ') || ''}</p>
+                <p className="text-[10px] text-gray-600">{humanize(s.format) || ''}</p>
               </div>
             );
           });
@@ -198,9 +182,6 @@ function CaptionsTab({ campaign }: { campaign: any }) {
     }).catch(() => {});
   };
 
-  const roles = ['Main Invitation', 'Quote Teaser', 'Story Invitation', 'Engagement Question'];
-  const platforms = ['Facebook/Instagram', 'Instagram', 'Instagram Story', 'Instagram Story'];
-
   return (
     <div className="space-y-4">
       <div className="flex items-center gap-2">
@@ -212,8 +193,8 @@ function CaptionsTab({ campaign }: { campaign: any }) {
       {hasCaptions ? (
         <div className="grid grid-cols-2 gap-3">
           {captionResults.map((c: any, i: number) => {
-            const role = roles[i] || `Caption ${i + 1}`;
-            const platform = platforms[i] || 'Social';
+            const role = c.roleLabel || labelSocialAssetRole(c.role) || `Caption ${i + 1}`;
+            const platform = c.platformLabel || c.platform || 'Social';
             const caption = c.longCaption || c.caption || '';
             const cta = c.cta || campaign.cta || '';
             const hashtags = c.hashtags || [];
@@ -257,11 +238,10 @@ function CaptionsTab({ campaign }: { campaign: any }) {
 }
 
 function ExportsTab({ setScreen, campaign }: { setScreen: (s: AppScreen) => void; campaign: any }) {
-  const deckResults = campaign.deckResults as any;
-  const socialResults = campaign.socialResults as any;
-  const slideCount = deckResults?.slideCount || 0;
-  const assetCount = socialResults?.assetCount || 0;
-  const captionCount = (campaign.captionResults as any[])?.length || 0;
+  const view = selectCampaignViewModel(campaign);
+  const slideCount = view.summary.counts.slides;
+  const assetCount = view.summary.counts.socialAssets;
+  const captionCount = view.summary.counts.captions;
   const totalFiles = slideCount + assetCount + captionCount + 5;
   return (
     <div className="space-y-4">

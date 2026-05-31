@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useAppStore } from '../lib/store';
 import { createApiClient } from '../lib/api';
+import { selectCampaignViewModel } from '../lib/campaign-view-model';
 
 const formats = [
   { key: 'pptx', label: 'PPTX', desc: 'PowerPoint presentation' },
@@ -24,6 +25,7 @@ function FileRow({ name, desc }: { name: string; desc: string }) {
 
 export default function ExportScreen() {
   const { setScreen, campaign, backendUrl } = useAppStore();
+  const view = selectCampaignViewModel(campaign);
   const [selected, setSelected] = useState<string[]>(['pptx', 'pdf', 'png', 'zip']);
   const [exporting, setExporting] = useState(false);
   const [exportDone, setExportDone] = useState(false);
@@ -49,13 +51,10 @@ export default function ExportScreen() {
   };
 
   // Build export summary from campaign data
-  const deckResults = campaign.deckResults as any;
-  const socialResults = campaign.socialResults as any;
-  const captionResults = campaign.captionResults as any[];
-  const slideCount = deckResults?.slideCount || 0;
-  const assetCount = socialResults?.assetCount || 0;
-  const captionCount = captionResults?.length || 0;
-  const assetIds = socialResults?.assetIds || [];
+  const slideCount = view.summary.counts.slides;
+  const assetCount = view.summary.counts.socialAssets;
+  const captionCount = view.summary.counts.captions;
+  const assetIds = view.generatedMedia.socialPack?.assets?.map((asset) => asset.id) || [];
 
   return (
     <div className="max-w-3xl mx-auto space-y-6">
@@ -117,7 +116,7 @@ export default function ExportScreen() {
           <div className="grid grid-cols-3 gap-3 text-xs">
             <div className="bg-black/20 rounded-lg p-3">
               <p className="text-gray-500">ZIP filename</p>
-              <p className="text-gray-200 font-mono">{campaign.title?.replace(/\s+/g, '-').toLowerCase() || 'campaign'}-export.zip</p>
+              <p className="text-gray-200 font-mono">{view.summary.title?.replace(/\s+/g, '-').toLowerCase() || 'campaign'}-export.zip</p>
             </div>
             <div className="bg-black/20 rounded-lg p-3">
               <p className="text-gray-500">Files</p>

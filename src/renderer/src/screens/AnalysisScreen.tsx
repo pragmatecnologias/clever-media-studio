@@ -3,7 +3,7 @@ import { useAppStore } from '../lib/store';
 import { createApiClient, type CampaignAnalysisResult } from '../lib/api';
 import {
   CAMPAIGN_TYPE_LABELS, CAMPAIGN_GOAL_LABELS,
-  stripLabelPrefix, getConfidenceColor, getConfidenceLabel,
+  stripLabelPrefix, getConfidenceColor, getConfidenceLabel, labelLanguage, labelOutput,
   TYPE_OPTIONS, GOAL_OPTIONS, OUTPUT_LABELS,
 } from '../lib/labels';
 import { PRESETS } from '../lib/presets';
@@ -154,7 +154,7 @@ export default function AnalysisScreen() {
             <CleanField label="Main Message" value={campaign.mainMessage} />
           </div>
           <CleanField label="Audience" value={campaign.audienceNeed} />
-          <CleanField label="Language" value={campaign.language === 'en' ? 'English' : 'Español'} />
+          <CleanField label="Language" value={labelLanguage(campaign.language)} />
         </div>
         {/* Key Points / Outline */}
         {result?.keyPoints?.length ? (
@@ -174,7 +174,7 @@ export default function AnalysisScreen() {
         <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Recommended for {CAMPAIGN_TYPE_LABELS[result?.detectedType || ''] || 'this campaign'}</h3>
         <div className="flex flex-wrap gap-1.5">
           {result?.recommendedOutputs?.map((o: string) => (
-            <span key={o} className="text-[10px] px-2 py-1 rounded-full bg-purple-500/10 text-purple-300 border border-purple-500/20">{OUTPUT_LABELS[o] || o.replace(/_/g, ' ')}</span>
+            <span key={o} className="text-[10px] px-2 py-1 rounded-full bg-purple-500/10 text-purple-300 border border-purple-500/20">{labelOutput(o) || OUTPUT_LABELS[o]}</span>
           )) || <span className="text-xs text-gray-500">No recommendations</span>}
         </div>
         {/* Suggested preset */}

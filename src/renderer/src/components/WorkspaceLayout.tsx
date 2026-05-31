@@ -3,36 +3,34 @@ import { useAppStore } from '../lib/store';
 import TopBar from './TopBar';
 import Sidebar from './Sidebar';
 import SettingsDrawer from './SettingsDrawer';
-import { CAMPAIGN_TYPE_LABELS, CAMPAIGN_GOAL_LABELS } from '../lib/labels';
+import { labelCampaignStatus, labelLanguage } from '../lib/labels';
+import { selectCampaignViewModel } from '../lib/campaign-view-model';
 import SlidePreviewScreen from '../screens/SlidePreviewScreen';
 import SocialPackPreviewScreen from '../screens/SocialPackPreviewScreen';
 import ExportScreen from '../screens/ExportScreen';
 
 function SummaryPanel() {
   const { campaign } = useAppStore();
-  const analysis = campaign.analysis as any;
-  const deckResults = campaign.deckResults as any;
-  const socialResults = campaign.socialResults as any;
-  const captionResults = campaign.captionResults as any;
+  const view = selectCampaignViewModel(campaign);
 
   return (
     <div className="space-y-4">
       <h3 className="text-lg font-semibold">Campaign Summary</h3>
       <div className="grid grid-cols-2 gap-3">
-        <InfoCard label="Title" value={campaign.title || 'Untitled'} />
-        <InfoCard label="Type" value={CAMPAIGN_TYPE_LABELS[campaign.campaignType] || campaign.campaignType || 'Not set'} />
-        <InfoCard label="Goal" value={CAMPAIGN_GOAL_LABELS[campaign.campaignGoal] || campaign.campaignGoal || 'Not set'} />
-        <InfoCard label="Status" value={campaign.status || 'draft'} />
-        <InfoCard label="Passage" value={campaign.passageOrTopic || '—'} />
-        <InfoCard label="Tone" value={campaign.tone || '—'} />
-        <InfoCard label="CTA" value={campaign.cta || '—'} />
-        <InfoCard label="Language" value={campaign.language === 'en' ? 'English' : 'Español'} />
+        <InfoCard label="Title" value={view.summary.title || 'Untitled'} />
+        <InfoCard label="Type" value={view.summary.typeLabel || 'Not set'} />
+        <InfoCard label="Goal" value={view.summary.goalLabel || 'Not set'} />
+        <InfoCard label="Status" value={labelCampaignStatus(campaign.status)} />
+        <InfoCard label="Passage" value={view.summary.passageOrTopic || '—'} />
+        <InfoCard label="Main Message" value={view.summary.mainMessage || '—'} />
+        <InfoCard label="CTA" value={view.summary.cta || '—'} />
+        <InfoCard label="Language" value={labelLanguage(campaign.language)} />
       </div>
 
       <div className="grid grid-cols-3 gap-3">
-        <StatCard label="Slides" value={deckResults?.slideCount || 0} />
-        <StatCard label="Social Assets" value={socialResults?.assetCount || socialResults?.assetIds?.length || 0} />
-        <StatCard label="Captions" value={(captionResults?.length) || 0} />
+        <StatCard label="Slides" value={view.summary.counts.slides} />
+        <StatCard label="Social Assets" value={view.summary.counts.socialAssets} />
+        <StatCard label="Captions" value={view.summary.counts.captions} />
       </div>
 
       {campaign.mainMessage && (
@@ -212,7 +210,7 @@ function CaptionsPanel() {
                 <span className="text-xs text-gray-500">Caption {i + 1}</span>
                 <span className="text-[10px] px-2 py-0.5 rounded bg-purple-500/10 text-purple-300">{caption.cta || 'No CTA'}</span>
               </div>
-              <p className="text-sm text-gray-300 whitespace-pre-wrap">{caption.longCaption || caption.captionPreview}</p>
+              <p className="text-sm text-gray-300 whitespace-pre-wrap">{caption.longCaption || caption.caption || caption.captionPreview}</p>
               {caption.hashtags?.length > 0 && (
                 <div className="flex flex-wrap gap-1">
                   {caption.hashtags.map((tag: string) => (
@@ -220,7 +218,7 @@ function CaptionsPanel() {
                   ))}
                 </div>
               )}
-              <button onClick={() => navigator.clipboard.writeText(caption.longCaption || caption.captionPreview || '')}
+              <button onClick={() => navigator.clipboard.writeText(caption.longCaption || caption.caption || caption.captionPreview || '')}
                 className="text-[10px] text-gray-500 hover:text-gray-300 transition-colors">
                 Copy caption
               </button>

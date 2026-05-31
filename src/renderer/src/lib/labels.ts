@@ -1,44 +1,29 @@
-export const CAMPAIGN_TYPE_LABELS: Record<string, string> = {
-  sermon: 'Sermon',
-  church_event: 'Church Event',
-  bible_study: 'Bible Study',
-  devotional: 'Devotional',
-  announcement: 'Announcement',
-  youth_program: 'Youth Program',
-  prayer_meeting: 'Prayer Meeting',
-  evangelistic_meeting: 'Evangelistic Meeting',
-  funeral_memorial: 'Funeral / Memorial',
-  wedding_family: 'Wedding / Family',
-  community_outreach: 'Community Outreach',
-  general_campaign: 'General Message',
-  custom: 'Custom',
-  auto: 'Auto-detect',
-};
-
-export const CAMPAIGN_GOAL_LABELS: Record<string, string> = {
-  invite_attendance: 'Invite People to Attend',
-  promote_livestream: 'Promote Livestream',
-  share_devotional: 'Share a Devotional',
-  announce_event: 'Announce an Event',
-  recap_event: 'Recap an Event',
-  teach_topic: 'Teach a Topic',
-  encourage_response: 'Encourage Response',
-  custom: 'Custom',
-  auto: 'Auto-detect',
-};
-
-export const SOCIAL_MODE_LABELS: Record<string, string> = {
-  invitation_campaign: 'Invitation Campaign',
-  devotional_pack: 'Devotional Pack',
-  announcement_pack: 'Announcement Pack',
-  recap_pack: 'Recap Pack',
-};
-
-const KNOWN_PREFIXES = ['Title:', 'Topic:', 'Message:', 'Goal:', 'Type:', 'Passage:', 'Main Message:', 'CTA:', 'Audience:', 'Speaker:', 'Event:', 'Date:', 'Time:', 'Location:'];
+export {
+  CAMPAIGN_GOAL_LABELS,
+  CAMPAIGN_STATUS_LABELS,
+  CAMPAIGN_TYPE_LABELS,
+  LANGUAGE_LABELS,
+  LAYOUT_FAMILY_LABELS,
+  OUTPUT_LABELS,
+  SOCIAL_ASSET_ROLE_LABELS,
+  SOCIAL_MODE_LABELS,
+  SOCIAL_PLATFORM_LABELS,
+  humanize,
+  labelCampaignGoal,
+  labelCampaignStatus,
+  labelCampaignType,
+  labelLanguage,
+  labelLayoutFamily,
+  labelOutput,
+  labelSocialAssetRole,
+  labelSocialMode,
+  labelSocialPlatform,
+} from '../../../../../../shared/campaign-normalized.contract';
 
 export function stripLabelPrefix(value: string): string {
   if (!value) return '';
-  for (const prefix of KNOWN_PREFIXES) {
+  const prefixes = ['Title:', 'Topic:', 'Message:', 'Goal:', 'Type:', 'Passage:', 'Main Message:', 'CTA:', 'Audience:', 'Speaker:', 'Event:', 'Date:', 'Time:', 'Location:'];
+  for (const prefix of prefixes) {
     if (value.toLowerCase().startsWith(prefix.toLowerCase())) {
       return value.slice(prefix.length).trim();
     }
@@ -69,67 +54,26 @@ export function getConfidenceLabel(confidence: number): string {
 export const TYPE_OPTIONS = [
   { value: 'sermon', label: 'Sermon' },
   { value: 'church_event', label: 'Church Event' },
-  { value: 'devotional', label: 'Devotional' },
   { value: 'bible_study', label: 'Bible Study' },
+  { value: 'devotional', label: 'Devotional' },
   { value: 'announcement', label: 'Announcement' },
   { value: 'youth_program', label: 'Youth Program' },
   { value: 'prayer_meeting', label: 'Prayer Meeting' },
   { value: 'evangelistic_meeting', label: 'Evangelistic Meeting' },
+  { value: 'funeral_memorial', label: 'Funeral / Memorial' },
+  { value: 'wedding_family', label: 'Wedding / Family' },
+  { value: 'community_outreach', label: 'Community Outreach' },
+  { value: 'general_campaign', label: 'General Message' },
+  { value: 'custom', label: 'Custom' },
 ];
-
-export const ASSET_ROLE_LABELS: Record<string, string> = {
-  main_invitation: 'Main Invitation',
-  quote_teaser: 'Quote Teaser',
-  story_invitation: 'Story Invitation',
-  engagement_question: 'Engagement Question',
-  whatsapp_invite: 'WhatsApp Invite',
-  whatsapp_forward: 'WhatsApp Forward',
-  youtube_thumbnail: 'YouTube Thumbnail',
-  devotional_quote: 'Devotional Quote',
-  reflection_question: 'Reflection Question',
-  encouragement_card: 'Encouragement Card',
-  scripture_reminder: 'Scripture Reminder',
-  whatsapp_share: 'WhatsApp Share',
-  recap_highlight: 'Recap Highlight',
-  event_poster: 'Event Poster',
-  announcement_card: 'Announcement Card',
-};
-
-export const OUTPUT_LABELS: Record<string, string> = {
-  presentationDeck: 'Slides',
-  presentation_deck: 'Presentation Deck',
-  socialPack: 'Social Pack',
-  social_pack: 'Social Pack',
-  captionPack: 'Captions',
-  caption_pack: 'Caption Pack',
-  thumbnail: 'Thumbnail',
-};
-
-export const LAYOUT_FAMILY_LABELS: Record<string, string> = {
-  title_cinematic: 'Title Slide',
-  scripture_focus: 'Scripture Slide',
-  big_idea_statement: 'Big Idea',
-  point_declaration: 'Main Point',
-  split_tension: 'Contrast Point',
-  application_steps: 'Application',
-  appeal_invitation: 'Invitation',
-  closing_blessing: 'Closing',
-  story_moment: 'Story Moment',
-  reflection_question: 'Reflection',
-  devotional_centerpiece: 'Devotional Center',
-  bold_thumbnail: 'Thumbnail',
-  story_vertical_hero: 'Story Graphic',
-  invitation_card: 'Invitation Card',
-  quote_card_minimal: 'Quote Card',
-  quote_centerpiece: 'Quote Center',
-};
 
 export const GOAL_OPTIONS = [
   { value: 'invite_attendance', label: 'Invite People to Attend' },
+  { value: 'promote_livestream', label: 'Promote Livestream' },
   { value: 'share_devotional', label: 'Share a Devotional' },
   { value: 'announce_event', label: 'Announce an Event' },
-  { value: 'promote_livestream', label: 'Promote Livestream' },
+  { value: 'recap_event', label: 'Recap an Event' },
   { value: 'teach_topic', label: 'Teach a Topic' },
   { value: 'encourage_response', label: 'Encourage Response' },
-  { value: 'recap_event', label: 'Recap an Event' },
+  { value: 'custom', label: 'Custom' },
 ];
