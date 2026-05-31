@@ -42,7 +42,7 @@ function getLayoutStyle(purpose: string, layoutFamily: string) {
   return layoutStyles[layoutFamily] || layoutStyles.point_declaration;
 }
 
-function SlideCanvas({ slide }: { slide: SlideData }) {
+function SlideCanvas({ slide, totalSlides }: { slide: SlideData; totalSlides: number }) {
   const style = getLayoutStyle(slide.purpose, slide.layoutFamily);
   const purpose = slide.purpose;
   const isTitle = purpose === 'title';
@@ -66,7 +66,7 @@ function SlideCanvas({ slide }: { slide: SlideData }) {
 
       {/* Slide number */}
       <span className="absolute bottom-5 right-7 text-[11px] opacity-25 z-10" style={{ color: style.subtext }}>
-        {slide.index} / 8
+        {slide.index} / {totalSlides || 8}
       </span>
 
       {/* --- TITLE SLIDE --- */}
@@ -320,7 +320,7 @@ export default function SlidePreviewScreen() {
         <div className="flex-1 space-y-4">
           {selected ? (
             <>
-              <SlideCanvas slide={selected} />
+              <SlideCanvas slide={selected} totalSlides={slides.length} />
 
               <div className="grid grid-cols-4 gap-3 text-xs">
                 <div className="bg-white/5 border border-white/10 rounded-lg p-3">

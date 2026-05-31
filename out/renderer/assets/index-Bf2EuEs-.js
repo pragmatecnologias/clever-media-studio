@@ -7715,6 +7715,7 @@ const SOCIAL_ASSET_ROLE_LABELS = {
   main_invitation: "Main Invitation",
   quote_teaser: "Quote Teaser",
   story_invitation: "Story Invitation",
+  reminder: "Reminder",
   engagement_question: "Engagement Question",
   whatsapp_invite: "WhatsApp Invite",
   whatsapp_forward: "WhatsApp Forward",
@@ -7821,13 +7822,13 @@ function buildCampaignSummaryDto(input) {
     presentationDeck: toNumber(deckResults.slideCount) > 0,
     socialPack: socialAssetCount > 0,
     captionPack: captionResults.length > 0,
-    exportPackage: !!input.exportResults
+    exportPackage: !!input.exportResults || !!input.exportJobId
   };
   const counts = {
     slides: toNumber(deckResults.slideCount),
     socialAssets: socialAssetCount,
     captions: captionResults.length,
-    exports: input.exportResults ? 1 : 0,
+    exports: input.exportResults || input.exportJobId ? 1 : 0,
     platforms: socialPlatformCount
   };
   return {
@@ -7857,6 +7858,9 @@ function buildCampaignGeneratedMediaDto(input) {
   const deckSlides = Array.isArray(input.deckResults?.slides) ? input.deckResults.slides : [];
   const socialAssets = Array.isArray(input.socialAssets) ? input.socialAssets : Array.isArray(input.socialResults?.assets) ? input.socialResults.assets : [];
   const captionResults = Array.isArray(input.captionResults) ? input.captionResults : [];
+  const exportResults = input.exportResults || null;
+  const exportFormatResults = Array.isArray(exportResults?.formats) ? exportResults.formats : [];
+  const exportItemResults = Array.isArray(exportResults?.items) ? exportResults.items : [];
   const quality = toQuality(input.qualityResults || input.socialResults?.quality || input.deckResults?.quality);
   return {
     campaignId: input.campaignId,
@@ -7877,7 +7881,7 @@ function buildCampaignGeneratedMediaDto(input) {
         layoutFamily: asString(slide.layoutFamily || "point_declaration"),
         layoutLabel: labelLayoutFamily(slide.layoutFamily || "point_declaration"),
         visualIntent: asString(slide.visualIntent || ""),
-        status: "ready",
+        status: asString(slide.status || "ready"),
         quality: {
           score: typeof slide.quality?.score === "number" ? slide.quality.score : null,
           warnings: Array.isArray(slide.quality?.warnings) ? slide.quality.warnings.filter(Boolean) : []
@@ -7920,29 +7924,29 @@ function buildCampaignGeneratedMediaDto(input) {
       cta: asString(caption.cta || ""),
       caption: asString(caption.longCaption || caption.caption || caption.captionPreview || ""),
       hashtags: Array.isArray(caption.hashtags) ? caption.hashtags.map((tag) => asString(tag)) : [],
-      status: "ready"
+      status: asString(caption.status || "ready")
     })),
-    exports: input.exportResults ? [{
-      exportId: asString(input.exportResults.exportId || input.exportResults.exportJobId || `export-${Date.now()}`),
-      status: input.exportResults.status || "ready",
-      fileName: asString(input.exportResults.fileName || ""),
-      filePath: asString(input.exportResults.filePath || ""),
-      fileSizeBytes: toNumber(input.exportResults.fileSizeBytes),
-      fileCount: toNumber(input.exportResults.fileCount) || 0,
-      formats: Array.isArray(input.exportResults.formats) ? input.exportResults.formats.map((format) => asString(format)) : [],
-      createdAt: asString(input.exportResults.createdAt || (/* @__PURE__ */ new Date()).toISOString()),
-      items: Array.isArray(input.exportResults.items) ? input.exportResults.items.map((item) => ({
+    exports: exportResults || input.exportJobId ? [{
+      exportId: asString(exportResults?.exportId || exportResults?.exportJobId || input.exportJobId || `export-${Date.now()}`),
+      status: exportResults?.status || "ready",
+      fileName: asString(exportResults?.fileName || ""),
+      filePath: asString(exportResults?.filePath || ""),
+      fileSizeBytes: toNumber(exportResults?.fileSizeBytes),
+      fileCount: toNumber(exportResults?.fileCount) || 0,
+      formats: exportFormatResults.map((format) => asString(format)),
+      createdAt: asString(exportResults?.createdAt || (/* @__PURE__ */ new Date()).toISOString()),
+      items: exportItemResults.map((item) => ({
         name: asString(item.name || ""),
         label: asString(item.label || ""),
         format: asString(item.format || ""),
         path: asString(item.path || "")
-      })) : []
+      }))
     }] : [],
     quality
   };
 }
 function selectCampaignViewModel(campaign, backendCampaign) {
-  const summarySource = buildCampaignSummaryDto({
+  const summarySource = backendCampaign?.summary || buildCampaignSummaryDto({
     campaignId: campaign.campaignId || "",
     title: campaign.title,
     type: campaign.campaignType,
@@ -7961,7 +7965,7 @@ function selectCampaignViewModel(campaign, backendCampaign) {
     createdAt: (/* @__PURE__ */ new Date()).toISOString(),
     updatedAt: (/* @__PURE__ */ new Date()).toISOString()
   });
-  const mediaSource = buildCampaignGeneratedMediaDto({
+  const mediaSource = backendCampaign?.generatedMedia || buildCampaignGeneratedMediaDto({
     campaignId: summarySource.campaignId,
     deckResults: campaign.deckResults,
     socialResults: campaign.socialResults,
@@ -11076,6 +11080,10 @@ function createApiClient(baseUrl, token) {
       });
       return data;
     },
+    updateCampaign: async (campaignId, patch) => {
+      const { data } = await client2.patch(`/campaigns/${campaignId}`, patch);
+      return data;
+    },
     generateMediaPack: async (campaignId, options) => {
       const { data } = await client2.post(`/campaigns/${campaignId}/generate-media-pack`, options);
       return data;
@@ -11096,12 +11104,64 @@ function createApiClient(baseUrl, token) {
       });
       return data;
     },
+    getExportDownloadInfo: async (campaignId, exportId) => {
+      const { data } = await client2.get(`/campaigns/${campaignId}/exports/${exportId}/download`);
+      return data;
+    },
     getCampaignSlides: async (campaignId) => {
       const { data } = await client2.get(`/campaigns/${campaignId}/slides`);
       return data;
     },
     getCampaignSocialAssets: async (campaignId) => {
       const { data } = await client2.get(`/campaigns/${campaignId}/social-assets`);
+      return data;
+    },
+    approveSlide: async (campaignId, slideId) => {
+      const { data } = await client2.post(`/campaigns/${campaignId}/slides/${slideId}/approve`);
+      return data;
+    },
+    approveAllSlides: async (campaignId) => {
+      const { data } = await client2.post(`/campaigns/${campaignId}/slides/approve-all`);
+      return data;
+    },
+    regenerateSlide: async (campaignId, slideId) => {
+      const { data } = await client2.post(`/campaigns/${campaignId}/slides/${slideId}/regenerate`);
+      return data;
+    },
+    regenerateAllSlides: async (campaignId) => {
+      const { data } = await client2.post(`/campaigns/${campaignId}/slides/regenerate`);
+      return data;
+    },
+    approveSocialAsset: async (campaignId, assetId) => {
+      const { data } = await client2.post(`/campaigns/${campaignId}/social-assets/${assetId}/approve`);
+      return data;
+    },
+    approveAllSocialAssets: async (campaignId) => {
+      const { data } = await client2.post(`/campaigns/${campaignId}/social-assets/approve-all`);
+      return data;
+    },
+    regenerateSocialAsset: async (campaignId, assetId) => {
+      const { data } = await client2.post(`/campaigns/${campaignId}/social-assets/${assetId}/regenerate`);
+      return data;
+    },
+    regenerateAllSocialAssets: async (campaignId) => {
+      const { data } = await client2.post(`/campaigns/${campaignId}/social-assets/regenerate`);
+      return data;
+    },
+    approveCaption: async (campaignId, captionId) => {
+      const { data } = await client2.post(`/campaigns/${campaignId}/captions/${captionId}/approve`);
+      return data;
+    },
+    approveAllCaptions: async (campaignId) => {
+      const { data } = await client2.post(`/campaigns/${campaignId}/captions/approve-all`);
+      return data;
+    },
+    regenerateCaption: async (campaignId, captionId) => {
+      const { data } = await client2.post(`/campaigns/${campaignId}/captions/${captionId}/regenerate`);
+      return data;
+    },
+    regenerateAllCaptions: async (campaignId) => {
+      const { data } = await client2.post(`/campaigns/${campaignId}/captions/regenerate`);
       return data;
     }
   };
@@ -12114,229 +12174,693 @@ Time: ${(/* @__PURE__ */ new Date()).toISOString()}`;
   ] });
 }
 const tabs = [
-  { key: "overview", label: "Overview" },
-  { key: "slides", label: "Slides" },
-  { key: "social", label: "Social Pack" },
-  { key: "captions", label: "Captions" },
-  { key: "exports", label: "Exports" },
-  { key: "warnings", label: "Warnings" }
+  { id: "overview", label: "Overview" },
+  { id: "slides", label: "Slides" },
+  { id: "social", label: "Social Pack" },
+  { id: "captions", label: "Captions" },
+  { id: "exports", label: "Exports" },
+  { id: "warnings", label: "Warnings" }
 ];
+const itemStatusStyles = {
+  draft: "bg-white/5 text-gray-300 border-white/10",
+  ready: "bg-blue-500/10 text-blue-300 border-blue-500/20",
+  approved: "bg-emerald-500/10 text-emerald-300 border-emerald-500/20",
+  regenerating: "bg-amber-500/10 text-amber-300 border-amber-500/20",
+  generating: "bg-amber-500/10 text-amber-300 border-amber-500/20",
+  failed: "bg-red-500/10 text-red-300 border-red-500/20"
+};
+const severityStyles = {
+  info: "bg-blue-500/10 border-blue-500/20 text-blue-200",
+  warning: "bg-amber-500/10 border-amber-500/20 text-amber-200",
+  error: "bg-red-500/10 border-red-500/20 text-red-200"
+};
+function statusLabel(status) {
+  return humanize(status || "draft");
+}
+function normalizeHashtags(raw) {
+  return raw.split(/[\s,]+/).map((tag) => tag.trim()).filter(Boolean).map((tag) => tag.startsWith("#") ? tag : `#${tag}`);
+}
+function formatCount(value) {
+  return value > 0 ? String(value) : "0";
+}
+function resolvePreset(campaign) {
+  return PRESETS.find((preset) => preset.id === campaign.presetId) || PRESETS.find((preset) => preset.campaignType === campaign.campaignType && preset.campaignGoal === campaign.campaignGoal) || null;
+}
+function classifyWarning(message) {
+  const text = message.toLowerCase();
+  if (text.includes("failed") || text.includes("not found") || text.includes("missing") || text.includes("error")) return "error";
+  if (text.includes("warn") || text.includes("only") || text.includes("incomplete") || text.includes("uncertain")) return "warning";
+  return "info";
+}
 function ReviewScreen() {
-  const { setScreen, campaign } = useAppStore();
-  const [tab, setTab] = reactExports.useState("overview");
-  return /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "max-w-5xl mx-auto space-y-6", children: [
-    /* @__PURE__ */ jsxRuntimeExports.jsx("h2", { className: "text-2xl font-bold", children: "Review Dashboard" }),
-    /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "flex gap-1 border-b border-white/5 pb-2", children: tabs.map((t2) => /* @__PURE__ */ jsxRuntimeExports.jsx(
-      "button",
-      {
-        onClick: () => setTab(t2.key),
-        className: `px-4 py-2 text-sm rounded-t-lg transition-all ${tab === t2.key ? "bg-white/5 text-white border-b-2 border-purple-500" : "text-gray-500 hover:text-gray-300"}`,
-        children: t2.label
-      },
-      t2.key
-    )) }),
-    /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "min-h-64", children: [
-      tab === "overview" && /* @__PURE__ */ jsxRuntimeExports.jsx(OverviewTab, { campaign }),
-      tab === "slides" && /* @__PURE__ */ jsxRuntimeExports.jsx(SlidesTab, { setScreen, campaign }),
-      tab === "social" && /* @__PURE__ */ jsxRuntimeExports.jsx(SocialTab, { setScreen, campaign }),
-      tab === "captions" && /* @__PURE__ */ jsxRuntimeExports.jsx(CaptionsTab, { campaign }),
-      tab === "exports" && /* @__PURE__ */ jsxRuntimeExports.jsx(ExportsTab, { setScreen, campaign }),
-      tab === "warnings" && /* @__PURE__ */ jsxRuntimeExports.jsx(WarningsTab, { campaign })
-    ] }),
-    /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex gap-3", children: [
-      /* @__PURE__ */ jsxRuntimeExports.jsx("button", { onClick: () => setScreen("generating"), className: "px-4 py-2 bg-white/5 rounded-lg text-sm", children: "Back" }),
-      /* @__PURE__ */ jsxRuntimeExports.jsx("button", { onClick: () => setScreen("export"), className: "px-6 py-2 bg-purple-500 hover:bg-purple-400 text-white rounded-lg text-sm font-semibold", children: "Go to Export" })
-    ] })
-  ] });
-}
-function OverviewTab({ campaign }) {
-  const view = selectCampaignViewModel(campaign);
-  const items = [
-    ["Campaign Type", view.summary.typeLabel],
-    ["Goal", view.summary.goalLabel],
-    ["Title", view.summary.title],
-    ["Main Message", view.summary.mainMessage],
-    ["Language", view.summary.languageLabel],
-    ["Tone", campaign.tone || "—"],
-    ["CTA", view.summary.cta || "—"],
-    ["Outputs", Object.entries(campaign.outputSelections || {}).filter(([, v2]) => v2).map(([k2]) => OUTPUT_LABELS[k2] || k2).join(", ") || "—"],
-    ["Event Date", view.summary.eventDetails?.date || "—"],
-    ["Location", view.summary.eventDetails?.locationName || "—"]
-  ];
-  return /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "grid grid-cols-2 gap-4", children: items.map(([label, value]) => /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { children: [
-    /* @__PURE__ */ jsxRuntimeExports.jsx("label", { className: "text-xs text-gray-500 uppercase tracking-wider block", children: label }),
-    /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-sm text-gray-200 mt-1", children: String(value || "—") })
-  ] }, label)) });
-}
-function SlidesTab({ setScreen, campaign }) {
-  const hasDeck = campaign.outputSelections?.presentationDeck;
-  const view = selectCampaignViewModel(campaign);
-  const deckResults = view.generatedMedia.deck;
-  const slideCount = deckResults?.slideCount || 0;
-  const layouts = new Set(deckResults?.slides?.map((s) => s.layoutFamily)).size;
-  const deckQuality = deckResults?.quality;
-  return /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "space-y-4", children: [
-    /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-center gap-2", children: [
-      /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-sm text-gray-400", children: hasDeck ? slideCount > 0 ? `${slideCount} slides with ${layouts} layout families` : "Deck generation in progress..." : "Presentation deck was not selected." }),
-      hasDeck && slideCount > 0 && /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "text-[10px] bg-green-500/10 text-green-400 px-1.5 py-0.5 rounded uppercase tracking-wider", children: "Generated" })
-    ] }),
-    hasDeck && slideCount > 0 && /* @__PURE__ */ jsxRuntimeExports.jsx("button", { onClick: () => setScreen("slidePreview"), className: "px-4 py-2 bg-purple-500/20 text-purple-200 border border-purple-400/40 rounded-lg text-sm hover:bg-purple-500/30", children: "Open Full Slide Preview" }),
-    deckQuality && /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "bg-white/5 border border-white/10 rounded-lg p-3 text-xs text-gray-400", children: [
-      "Quality score: ",
-      deckQuality.score,
-      " — ",
-      deckQuality.passed ? "Passed" : "Needs review",
-      deckQuality.warnings?.length ? ` — ${deckQuality.warnings.length} warning(s)` : ""
-    ] }),
-    /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "grid grid-cols-4 gap-2", children: slideCount > 0 && deckResults?.slides ? deckResults.slides.map((s, i) => /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "bg-white/5 border border-white/10 rounded-lg p-2 text-center", children: [
-      /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-xs text-gray-400", children: s.index || i + 1 }),
-      /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-xs text-gray-300 truncate", children: s.headline || "slide" })
-    ] }, i)) : slideCount > 0 ? Array.from({ length: slideCount }, (_, i) => /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "bg-white/5 border border-white/10 rounded-lg p-2 text-center", children: [
-      /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-xs text-gray-400", children: i + 1 }),
-      /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-xs text-gray-600 truncate", children: "slide" })
-    ] }, i)) : ["title_cinematic", "scripture_focus", "big_idea_statement", "point_declaration", "split_tension", "application_steps", "appeal_invitation", "closing_blessing"].map((l2, i) => /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "bg-white/5 border border-white/10 rounded-lg p-2 text-center", children: [
-      /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-xs text-gray-400", children: i + 1 }),
-      /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-xs text-gray-600 truncate", children: labelLayoutFamily(l2) })
-    ] }, i)) })
-  ] });
-}
-function SocialTab({ setScreen, campaign }) {
-  const hasSocial = campaign.outputSelections?.socialPack;
-  const view = selectCampaignViewModel(campaign);
-  const socialResults = view.generatedMedia.socialPack;
-  const assetCount = socialResults?.assetCount || 0;
-  const socialMode = socialResults?.mode || "unknown";
-  return /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "space-y-4", children: [
-    /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-center gap-2", children: [
-      /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-sm text-gray-400", children: hasSocial ? assetCount > 0 ? `${assetCount} assets · ${labelSocialMode(socialMode) || socialMode}` : "Social pack generation in progress..." : "Social pack was not selected." }),
-      hasSocial && assetCount > 0 && /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "text-[10px] bg-green-500/10 text-green-400 px-1.5 py-0.5 rounded uppercase tracking-wider", children: "Generated" })
-    ] }),
-    hasSocial && assetCount > 0 && /* @__PURE__ */ jsxRuntimeExports.jsx("button", { onClick: () => setScreen("socialPreview"), className: "px-4 py-2 bg-purple-500/20 text-purple-200 border border-purple-400/40 rounded-lg text-sm hover:bg-purple-500/30", children: "Open Full Social Pack Preview" }),
-    /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "grid grid-cols-3 gap-2", children: (() => {
-      const displaySpecs = socialResults?.assets?.length ? socialResults.assets : [];
-      return displaySpecs.slice(0, Math.max(assetCount || displaySpecs.length, 6)).map((s, i) => {
-        const roleLabel = labelSocialAssetRole(s.role);
-        const platformIcon = { instagram: "📱", facebook: "📘", youtube: "▶️", whatsapp: "💬" };
-        return /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "bg-white/5 border border-white/10 rounded-lg p-2.5 space-y-1 hover:border-white/20 transition-all", children: [
-          /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-center justify-between", children: [
-            /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { className: "text-[10px] text-gray-500 uppercase tracking-wider", children: [
-              platformIcon[s.platform] || "",
-              " ",
-              s.platformLabel || s.platform
-            ] }),
-            /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "text-[9px] bg-green-500/10 text-green-400 px-1 rounded", children: "Ready" })
-          ] }),
-          /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-xs text-gray-300 font-medium capitalize", children: roleLabel }),
-          /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-[10px] text-gray-600", children: humanize(s.format) || "" })
-        ] }, i);
-      });
-    })() })
-  ] });
-}
-function CaptionsTab({ campaign }) {
-  const captionResults = campaign.captionResults;
-  const hasCaptions = captionResults && captionResults.length > 0;
-  const [copiedIdx, setCopiedIdx] = reactExports.useState(-1);
-  const copyCaption = (text, idx) => {
-    navigator.clipboard.writeText(text).then(() => {
-      setCopiedIdx(idx);
-      setTimeout(() => setCopiedIdx(-1), 2e3);
-    }).catch(() => {
+  const { campaign, backendUrl, setScreen, updateCampaign } = useAppStore();
+  const api = reactExports.useMemo(() => createApiClient(backendUrl), [backendUrl]);
+  const [backendCampaign, setBackendCampaign] = reactExports.useState(null);
+  const [activeTab, setActiveTab] = reactExports.useState("overview");
+  const [busyKey, setBusyKey] = reactExports.useState(null);
+  const [screenError, setScreenError] = reactExports.useState("");
+  const [exportInfo, setExportInfo] = reactExports.useState(null);
+  const [editingCaptionId, setEditingCaptionId] = reactExports.useState(null);
+  const [captionDrafts, setCaptionDrafts] = reactExports.useState({});
+  const view = reactExports.useMemo(() => selectCampaignViewModel(campaign, backendCampaign), [campaign, backendCampaign]);
+  const preset = resolvePreset(campaign);
+  const slides = view.generatedMedia.deck?.slides || [];
+  const socialAssets = view.generatedMedia.socialPack?.assets || [];
+  const captions = view.generatedMedia.captions || [];
+  const summary = view.summary;
+  const exportJobId = backendCampaign?.exportJobId || campaign.generationJobId || "";
+  reactExports.useEffect(() => {
+    let cancelled = false;
+    async function loadCampaign() {
+      if (!campaign.campaignId) return;
+      setScreenError("");
+      try {
+        const data = await api.getCampaign(campaign.campaignId);
+        if (cancelled) return;
+        setBackendCampaign(data);
+        updateCampaign({
+          status: data.summary.status,
+          deckResults: data.generatedMedia.deck || campaign.deckResults,
+          socialResults: data.generatedMedia.socialPack || campaign.socialResults,
+          captionResults: data.generatedMedia.captions || campaign.captionResults
+        });
+        if (data.exportJobId) {
+          try {
+            const info = await api.getExportDownloadInfo(campaign.campaignId, data.exportJobId);
+            if (!cancelled) setExportInfo(info);
+          } catch {
+            if (!cancelled) setExportInfo(null);
+          }
+        } else if (!cancelled) {
+          setExportInfo(null);
+        }
+      } catch (err) {
+        if (!cancelled) setScreenError(err?.message || "Unable to load campaign details.");
+      }
+    }
+    void loadCampaign();
+    return () => {
+      cancelled = true;
+    };
+  }, [api, campaign.campaignId, updateCampaign]);
+  reactExports.useEffect(() => {
+    if (!editingCaptionId) return;
+    const caption = captions.find((item) => item.id === editingCaptionId);
+    if (!caption) return;
+    setCaptionDrafts((prev) => {
+      if (prev[caption.id]) return prev;
+      return {
+        ...prev,
+        [caption.id]: {
+          cta: caption.cta || "",
+          caption: caption.caption || "",
+          hashtagsText: (caption.hashtags || []).join(" ")
+        }
+      };
+    });
+  }, [captions, editingCaptionId]);
+  const syncFromBackend = async () => {
+    if (!campaign.campaignId) return;
+    const data = await api.getCampaign(campaign.campaignId);
+    setBackendCampaign(data);
+    updateCampaign({
+      status: data.summary.status,
+      deckResults: data.generatedMedia.deck || campaign.deckResults,
+      socialResults: data.generatedMedia.socialPack || campaign.socialResults,
+      captionResults: data.generatedMedia.captions || campaign.captionResults
+    });
+    if (data.exportJobId) {
+      try {
+        const info = await api.getExportDownloadInfo(campaign.campaignId, data.exportJobId);
+        setExportInfo(info);
+      } catch {
+        setExportInfo(null);
+      }
+    } else {
+      setExportInfo(null);
+    }
+  };
+  const runAction = async (key, action) => {
+    setBusyKey(key);
+    setScreenError("");
+    try {
+      await action();
+      await syncFromBackend();
+    } catch (err) {
+      setScreenError(err?.response?.data?.message || err?.message || "Request failed.");
+    } finally {
+      setBusyKey(null);
+    }
+  };
+  const approveSlide = (slideId) => runAction(`slide:${slideId}`, async () => {
+    if (!campaign.campaignId) return;
+    await api.approveSlide(campaign.campaignId, slideId);
+  });
+  const regenerateSlide = (slideId) => runAction(`slide-regenerate:${slideId}`, async () => {
+    if (!campaign.campaignId) return;
+    await api.regenerateSlide(campaign.campaignId, slideId);
+  });
+  const approveSocialAsset = (assetId) => runAction(`social:${assetId}`, async () => {
+    if (!campaign.campaignId) return;
+    await api.approveSocialAsset(campaign.campaignId, assetId);
+  });
+  const regenerateSocialAsset = (assetId) => runAction(`social-regenerate:${assetId}`, async () => {
+    if (!campaign.campaignId) return;
+    await api.regenerateSocialAsset(campaign.campaignId, assetId);
+  });
+  const approveCaption = (captionId) => runAction(`caption:${captionId}`, async () => {
+    if (!campaign.campaignId) return;
+    await api.approveCaption(campaign.campaignId, captionId);
+  });
+  const regenerateCaption = (captionId) => runAction(`caption-regenerate:${captionId}`, async () => {
+    if (!campaign.campaignId) return;
+    await api.regenerateCaption(campaign.campaignId, captionId);
+  });
+  const approveAll = async (kind) => {
+    if (!campaign.campaignId) return;
+    const action = kind === "slides" ? api.approveAllSlides : kind === "social" ? api.approveAllSocialAssets : api.approveAllCaptions;
+    await runAction(`bulk:${kind}`, async () => {
+      await action(campaign.campaignId);
     });
   };
-  return /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "space-y-4", children: [
-    /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-center gap-2", children: [
-      /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-sm text-gray-400", children: hasCaptions ? `Caption Package — ${captionResults.length} captions` : "No captions generated" }),
-      hasCaptions && /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "text-[10px] bg-green-500/10 text-green-400 px-1.5 py-0.5 rounded uppercase tracking-wider", children: "Generated" })
-    ] }),
-    hasCaptions ? /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "grid grid-cols-2 gap-3", children: captionResults.map((c, i) => {
-      const role = c.roleLabel || labelSocialAssetRole(c.role) || `Caption ${i + 1}`;
-      const platform2 = c.platformLabel || c.platform || "Social";
-      const caption = c.longCaption || c.caption || "";
-      const cta = c.cta || campaign.cta || "";
-      const hashtags = c.hashtags || [];
-      return /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "bg-white/5 border border-white/10 rounded-xl p-4 space-y-3 hover:border-white/20 transition-all", children: [
-        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-center justify-between", children: [
-          /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { children: [
-            /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-xs font-semibold text-gray-200", children: role }),
-            /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-[10px] text-gray-500", children: platform2 })
-          ] }),
-          /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "text-[9px] bg-green-500/10 text-green-400 px-1.5 py-0.5 rounded", children: "Ready" })
-        ] }),
-        /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "bg-black/20 rounded-lg p-3", children: /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-xs text-gray-300 leading-relaxed whitespace-pre-line", children: caption }) }),
+  const regenerateAll = async (kind) => {
+    if (!campaign.campaignId) return;
+    const action = kind === "slides" ? api.regenerateAllSlides : kind === "social" ? api.regenerateAllSocialAssets : api.regenerateAllCaptions;
+    await runAction(`bulk-regenerate:${kind}`, async () => {
+      await action(campaign.campaignId);
+    });
+  };
+  const saveCaption = async (captionId) => {
+    if (!campaign.campaignId) return;
+    const draft = captionDrafts[captionId];
+    const current = captions.find((item) => item.id === captionId);
+    if (!draft || !current) return;
+    const updatedCaptions = captions.map((item) => {
+      if (item.id !== captionId) return item;
+      return {
+        ...item,
+        cta: draft.cta,
+        caption: draft.caption,
+        hashtags: normalizeHashtags(draft.hashtagsText),
+        status: "ready"
+      };
+    });
+    await runAction(`caption-save:${captionId}`, async () => {
+      const data = await api.updateCampaign(campaign.campaignId, { captionResults: updatedCaptions });
+      setBackendCampaign(data);
+      setEditingCaptionId(null);
+      setCaptionDrafts((prev) => {
+        const next = { ...prev };
+        delete next[captionId];
+        return next;
+      });
+    });
+  };
+  const exportPackage = async () => {
+    if (!campaign.campaignId) return;
+    await runAction("export", async () => {
+      const result = await api.exportCampaign(campaign.campaignId, campaign.advancedSettings.exportFormats || ["pptx", "pdf", "png", "zip"]);
+      const info = await api.getExportDownloadInfo(campaign.campaignId, result.exportJobId);
+      setExportInfo(info);
+      const data = await api.getCampaign(campaign.campaignId);
+      setBackendCampaign(data);
+    });
+  };
+  const warnings = reactExports.useMemo(() => {
+    const items = [];
+    const pushMessages = (category, messages) => {
+      messages.filter((message) => typeof message === "string" && message.trim().length > 0).forEach((message) => {
+        items.push({ category, message, severity: classifyWarning(message) });
+      });
+    };
+    pushMessages("Summary", summary.warnings || []);
+    pushMessages("Deck", slides.flatMap((slide) => slide.quality?.warnings || []));
+    pushMessages("Social", socialAssets.flatMap((asset) => asset.quality?.warnings || []));
+    pushMessages("Captions", captions.flatMap((caption) => caption.warnings || []));
+    if (exportInfo && exportInfo.status !== "ready") {
+      items.push({ category: "Export", message: `Export package is ${exportInfo.status}.`, severity: "warning" });
+    }
+    return items;
+  }, [captions, exportInfo, slides, socialAssets, summary.warnings]);
+  const exportReady = summary.counts.slides > 0 || summary.counts.socialAssets > 0 || summary.counts.captions > 0;
+  const packageName = preset?.name || "Custom package";
+  const visualStyle = campaign.advancedSettings.visualStyle || "auto";
+  const topError = screenError || "";
+  return /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "max-w-7xl mx-auto space-y-6", children: [
+    /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-start justify-between gap-4 flex-wrap", children: [
+      /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "space-y-2", children: [
         /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-center gap-2 flex-wrap", children: [
-          cta && /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "text-[10px] px-2 py-0.5 rounded-full bg-purple-500/10 text-purple-300", children: cta }),
-          hashtags.slice(0, 4).map((h, j) => /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "text-[10px] text-blue-400/70", children: h }, j))
+          /* @__PURE__ */ jsxRuntimeExports.jsx("h2", { className: "text-2xl font-bold tracking-tight", children: summary.title || "Untitled Campaign" }),
+          /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: `text-[10px] px-2 py-0.5 rounded border ${itemStatusStyles.ready}`, children: labelCampaignStatus(summary.status) })
         ] }),
-        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-center gap-1.5 pt-1 border-t border-white/5", children: [
+        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex flex-wrap items-center gap-2 text-sm text-gray-400", children: [
+          /* @__PURE__ */ jsxRuntimeExports.jsx("span", { children: labelCampaignType(summary.type) }),
+          /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "text-gray-700", children: "•" }),
+          /* @__PURE__ */ jsxRuntimeExports.jsx("span", { children: labelCampaignGoal(summary.goal) }),
+          /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "text-gray-700", children: "•" }),
+          /* @__PURE__ */ jsxRuntimeExports.jsx("span", { children: labelLanguage(summary.language) }),
+          summary.passageOrTopic ? /* @__PURE__ */ jsxRuntimeExports.jsxs(jsxRuntimeExports.Fragment, { children: [
+            /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "text-gray-700", children: "•" }),
+            /* @__PURE__ */ jsxRuntimeExports.jsx("span", { children: summary.passageOrTopic })
+          ] }) : null
+        ] }),
+        topError ? /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "rounded-lg border border-red-500/20 bg-red-500/5 px-3 py-2 text-sm text-red-200", children: topError }) : null
+      ] }),
+      /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-center gap-2 flex-wrap", children: [
+        /* @__PURE__ */ jsxRuntimeExports.jsx("button", { onClick: () => setScreen("workspace"), className: "px-4 py-2 rounded-lg border border-white/10 bg-white/5 text-sm text-gray-300 hover:bg-white/10", children: "Workspace" }),
+        /* @__PURE__ */ jsxRuntimeExports.jsx(
+          "button",
+          {
+            onClick: () => setScreen("slidePreview"),
+            className: "px-4 py-2 rounded-lg border border-white/10 bg-white/5 text-sm text-gray-300 hover:bg-white/10",
+            children: "Open Slides"
+          }
+        ),
+        /* @__PURE__ */ jsxRuntimeExports.jsx(
+          "button",
+          {
+            onClick: () => setScreen("socialPreview"),
+            className: "px-4 py-2 rounded-lg border border-white/10 bg-white/5 text-sm text-gray-300 hover:bg-white/10",
+            children: "Open Social"
+          }
+        ),
+        /* @__PURE__ */ jsxRuntimeExports.jsx(
+          "button",
+          {
+            onClick: () => setScreen("export"),
+            className: "px-4 py-2 rounded-lg border border-purple-500/30 bg-purple-500/10 text-sm text-purple-200 hover:bg-purple-500/20",
+            children: "Export Screen"
+          }
+        )
+      ] })
+    ] }),
+    /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "flex flex-wrap gap-2 border-b border-white/10 pb-3", children: tabs.map((tab) => /* @__PURE__ */ jsxRuntimeExports.jsx(
+      "button",
+      {
+        onClick: () => setActiveTab(tab.id),
+        className: `px-4 py-2 rounded-full text-sm border transition-colors ${activeTab === tab.id ? "bg-purple-500/15 border-purple-500/30 text-purple-100" : "bg-white/5 border-white/10 text-gray-400 hover:bg-white/10 hover:text-gray-200"}`,
+        children: tab.label
+      },
+      tab.id
+    )) }),
+    activeTab === "overview" && /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "grid gap-4 lg:grid-cols-[1.4fr_0.9fr]", children: [
+      /* @__PURE__ */ jsxRuntimeExports.jsxs("section", { className: "rounded-2xl border border-white/10 bg-white/5 p-5 space-y-4", children: [
+        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-center justify-between gap-3 flex-wrap", children: [
+          /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { children: [
+            /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-xs uppercase tracking-[0.25em] text-gray-500", children: "Overview" }),
+            /* @__PURE__ */ jsxRuntimeExports.jsx("h3", { className: "text-lg font-semibold text-gray-100 mt-1", children: "Campaign summary" })
+          ] }),
+          /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: `text-[10px] px-2 py-0.5 rounded border ${itemStatusStyles.ready}`, children: exportReady ? "Ready for export" : "Waiting for outputs" })
+        ] }),
+        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "grid gap-3 md:grid-cols-2", children: [
+          /* @__PURE__ */ jsxRuntimeExports.jsx(InfoCard$1, { label: "Title", value: summary.title || "Untitled" }),
+          /* @__PURE__ */ jsxRuntimeExports.jsx(InfoCard$1, { label: "Preset", value: packageName }),
+          /* @__PURE__ */ jsxRuntimeExports.jsx(InfoCard$1, { label: "Visual style", value: humanize(visualStyle) }),
+          /* @__PURE__ */ jsxRuntimeExports.jsx(InfoCard$1, { label: "Selected package", value: preset?.description || "Custom configuration" }),
+          /* @__PURE__ */ jsxRuntimeExports.jsx(InfoCard$1, { label: "Type", value: summary.typeLabel }),
+          /* @__PURE__ */ jsxRuntimeExports.jsx(InfoCard$1, { label: "Goal", value: summary.goalLabel }),
+          /* @__PURE__ */ jsxRuntimeExports.jsx(InfoCard$1, { label: "Status", value: summary.statusLabel }),
+          /* @__PURE__ */ jsxRuntimeExports.jsx(InfoCard$1, { label: "Language", value: summary.languageLabel }),
+          /* @__PURE__ */ jsxRuntimeExports.jsx(InfoCard$1, { label: "Passage / topic", value: summary.passageOrTopic || "—" }),
+          /* @__PURE__ */ jsxRuntimeExports.jsx(InfoCard$1, { label: "CTA", value: summary.cta || "—" }),
+          /* @__PURE__ */ jsxRuntimeExports.jsx(InfoCard$1, { label: "Main message", value: summary.mainMessage || "—" }),
+          /* @__PURE__ */ jsxRuntimeExports.jsx(InfoCard$1, { label: "Warnings", value: String(warnings.length) })
+        ] })
+      ] }),
+      /* @__PURE__ */ jsxRuntimeExports.jsxs("section", { className: "rounded-2xl border border-white/10 bg-white/5 p-5 space-y-4", children: [
+        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { children: [
+          /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-xs uppercase tracking-[0.25em] text-gray-500", children: "Counts" }),
+          /* @__PURE__ */ jsxRuntimeExports.jsx("h3", { className: "text-lg font-semibold text-gray-100 mt-1", children: "Generated outputs" })
+        ] }),
+        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "grid grid-cols-2 gap-3", children: [
+          /* @__PURE__ */ jsxRuntimeExports.jsx(MetricCard, { label: "Slides", value: formatCount(summary.counts.slides) }),
+          /* @__PURE__ */ jsxRuntimeExports.jsx(MetricCard, { label: "Social assets", value: formatCount(summary.counts.socialAssets) }),
+          /* @__PURE__ */ jsxRuntimeExports.jsx(MetricCard, { label: "Captions", value: formatCount(summary.counts.captions) }),
+          /* @__PURE__ */ jsxRuntimeExports.jsx(MetricCard, { label: "Exports", value: formatCount(summary.counts.exports) })
+        ] }),
+        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "rounded-xl border border-white/10 bg-black/20 p-4 space-y-3", children: [
+          /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-center justify-between", children: [
+            /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "text-sm text-gray-300", children: "Quality score" }),
+            /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "text-sm font-semibold text-emerald-300", children: summary.quality.score ?? "—" })
+          ] }),
+          /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-center justify-between", children: [
+            /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "text-sm text-gray-300", children: "Export readiness" }),
+            /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "text-sm font-semibold text-gray-100", children: exportReady ? "Ready" : "Not ready" })
+          ] }),
+          /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-center justify-between", children: [
+            /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "text-sm text-gray-300", children: "Export job" }),
+            /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "text-sm font-mono text-gray-400", children: exportJobId || "—" })
+          ] })
+        ] })
+      ] })
+    ] }),
+    activeTab === "slides" && /* @__PURE__ */ jsxRuntimeExports.jsxs("section", { className: "space-y-4", children: [
+      /* @__PURE__ */ jsxRuntimeExports.jsx(
+        TabHeader,
+        {
+          title: "Slides",
+          subtitle: `${slides.length} slide${slides.length === 1 ? "" : "s"} in the normalized deck`,
+          actions: /* @__PURE__ */ jsxRuntimeExports.jsxs(jsxRuntimeExports.Fragment, { children: [
+            /* @__PURE__ */ jsxRuntimeExports.jsx(ActionButton, { onClick: () => approveAll("slides"), busy: busyKey === "bulk:slides", label: "Approve all" }),
+            /* @__PURE__ */ jsxRuntimeExports.jsx(ActionButton, { onClick: () => regenerateAll("slides"), busy: busyKey === "bulk-regenerate:slides", label: "Regenerate all" })
+          ] })
+        }
+      ),
+      /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "grid gap-4 xl:grid-cols-2", children: slides.map((slide) => /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "rounded-2xl border border-white/10 bg-white/5 p-5 space-y-4", children: [
+        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-start justify-between gap-3", children: [
+          /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { children: [
+            /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-center gap-2 flex-wrap", children: [
+              /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { className: "text-xs text-gray-400", children: [
+                "Slide ",
+                slide.index
+              ] }),
+              /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: `text-[10px] px-2 py-0.5 rounded border ${itemStatusStyles[slide.status || "draft"]}`, children: statusLabel(slide.status) })
+            ] }),
+            /* @__PURE__ */ jsxRuntimeExports.jsx("h4", { className: "text-lg font-semibold text-gray-100 mt-2", children: slide.headline || "Untitled slide" }),
+            /* @__PURE__ */ jsxRuntimeExports.jsxs("p", { className: "text-sm text-gray-400", children: [
+              slide.roleLabel,
+              " · ",
+              labelLayoutFamily(slide.layoutFamily)
+            ] })
+          ] }),
+          /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "text-right text-xs text-gray-500", children: [
+            /* @__PURE__ */ jsxRuntimeExports.jsx("p", { children: "Quality" }),
+            /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-gray-200 text-sm", children: slide.quality?.score ?? "—" })
+          ] })
+        ] }),
+        slide.scriptureReference ? /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-sm text-amber-200", children: slide.scriptureReference }) : null,
+        /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "rounded-xl border border-white/10 bg-black/20 p-4 space-y-2", children: slide.bodyLines?.length ? slide.bodyLines.map((line, index) => /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-sm text-gray-300", children: line }, `${slide.id}-${index}`)) : /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-sm text-gray-500", children: "No body copy." }) }),
+        slide.quality?.warnings?.length ? /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "space-y-2", children: slide.quality.warnings.map((warning, index) => /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-xs text-amber-300", children: warning }, `${slide.id}-warning-${index}`)) }) : null,
+        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex flex-wrap gap-2", children: [
+          /* @__PURE__ */ jsxRuntimeExports.jsx("button", { onClick: () => setScreen("slidePreview"), className: "px-3 py-2 rounded-lg border border-white/10 bg-white/5 text-xs text-gray-300 hover:bg-white/10", children: "Preview" }),
+          /* @__PURE__ */ jsxRuntimeExports.jsx(ActionButton, { onClick: () => regenerateSlide(slide.id), busy: busyKey === `slide-regenerate:${slide.id}`, label: "Regenerate" }),
+          /* @__PURE__ */ jsxRuntimeExports.jsx(ActionButton, { onClick: () => approveSlide(slide.id), busy: busyKey === `slide:${slide.id}`, label: "Approve" })
+        ] })
+      ] }, slide.id)) })
+    ] }),
+    activeTab === "social" && /* @__PURE__ */ jsxRuntimeExports.jsxs("section", { className: "space-y-4", children: [
+      /* @__PURE__ */ jsxRuntimeExports.jsx(
+        TabHeader,
+        {
+          title: "Social pack",
+          subtitle: `${socialAssets.length} social asset${socialAssets.length === 1 ? "" : "s"} in the normalized pack`,
+          actions: /* @__PURE__ */ jsxRuntimeExports.jsxs(jsxRuntimeExports.Fragment, { children: [
+            /* @__PURE__ */ jsxRuntimeExports.jsx(ActionButton, { onClick: () => approveAll("social"), busy: busyKey === "bulk:social", label: "Approve all" }),
+            /* @__PURE__ */ jsxRuntimeExports.jsx(ActionButton, { onClick: () => regenerateAll("social"), busy: busyKey === "bulk-regenerate:social", label: "Regenerate all" })
+          ] })
+        }
+      ),
+      /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "grid gap-4 xl:grid-cols-2", children: socialAssets.map((asset) => /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "rounded-2xl border border-white/10 bg-white/5 p-5 space-y-4", children: [
+        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-start justify-between gap-3", children: [
+          /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { children: [
+            /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-center gap-2 flex-wrap", children: [
+              /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "text-xs text-gray-400", children: labelSocialPlatform(asset.platform) }),
+              /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: `text-[10px] px-2 py-0.5 rounded border ${itemStatusStyles[asset.status || "draft"]}`, children: statusLabel(asset.status) })
+            ] }),
+            /* @__PURE__ */ jsxRuntimeExports.jsx("h4", { className: "text-lg font-semibold text-gray-100 mt-2", children: asset.roleLabel || labelSocialAssetRole(asset.role) }),
+            /* @__PURE__ */ jsxRuntimeExports.jsxs("p", { className: "text-sm text-gray-400", children: [
+              asset.width,
+              " x ",
+              asset.height,
+              " · ",
+              asset.format
+            ] })
+          ] }),
+          /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "text-right text-xs text-gray-500", children: [
+            /* @__PURE__ */ jsxRuntimeExports.jsx("p", { children: "Quality" }),
+            /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-gray-200 text-sm", children: asset.quality?.score ?? "—" })
+          ] })
+        ] }),
+        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "rounded-xl border border-white/10 bg-black/20 p-4 space-y-2", children: [
+          /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-sm text-gray-200", children: asset.caption || "No caption text." }),
+          asset.cta ? /* @__PURE__ */ jsxRuntimeExports.jsxs("p", { className: "text-xs text-purple-200", children: [
+            "CTA: ",
+            asset.cta
+          ] }) : null
+        ] }),
+        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex flex-wrap gap-2", children: [
+          /* @__PURE__ */ jsxRuntimeExports.jsx("button", { onClick: () => setScreen("socialPreview"), className: "px-3 py-2 rounded-lg border border-white/10 bg-white/5 text-xs text-gray-300 hover:bg-white/10", children: "Open Preview" }),
           /* @__PURE__ */ jsxRuntimeExports.jsx(
             "button",
             {
-              onClick: () => copyCaption(caption, i),
-              className: "text-[10px] px-2 py-1 rounded bg-white/5 hover:bg-white/10 text-gray-400 hover:text-white transition-colors",
-              children: copiedIdx === i ? "Copied!" : "Copy Caption"
+              onClick: () => asset.caption && navigator.clipboard.writeText(asset.caption).catch(() => {
+              }),
+              className: "px-3 py-2 rounded-lg border border-white/10 bg-white/5 text-xs text-gray-300 hover:bg-white/10",
+              children: "Copy Caption"
             }
           ),
-          /* @__PURE__ */ jsxRuntimeExports.jsx("button", { className: "text-[10px] px-2 py-1 rounded bg-white/5 hover:bg-white/10 text-gray-400 hover:text-white transition-colors", children: "Regenerate" }),
-          /* @__PURE__ */ jsxRuntimeExports.jsx("button", { className: "text-[10px] px-2 py-1 rounded bg-purple-500/20 hover:bg-purple-500/30 text-purple-300 transition-colors ml-auto", children: "Approve" })
+          /* @__PURE__ */ jsxRuntimeExports.jsx(ActionButton, { onClick: () => regenerateSocialAsset(asset.id), busy: busyKey === `social-regenerate:${asset.id}`, label: "Regenerate" }),
+          /* @__PURE__ */ jsxRuntimeExports.jsx(ActionButton, { onClick: () => approveSocialAsset(asset.id), busy: busyKey === `social:${asset.id}`, label: "Approve" })
         ] })
-      ] }, i);
-    }) }) : /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "bg-amber-500/5 border border-amber-500/20 rounded-xl p-4", children: /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-sm text-amber-300/80", children: "Captions were not generated for this campaign." }) })
-  ] });
-}
-function ExportsTab({ setScreen, campaign }) {
-  const view = selectCampaignViewModel(campaign);
-  const slideCount = view.summary.counts.slides;
-  const assetCount = view.summary.counts.socialAssets;
-  const captionCount = view.summary.counts.captions;
-  const totalFiles = slideCount + assetCount + captionCount + 5;
-  return /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "space-y-4", children: [
-    /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-center gap-2", children: [
-      /* @__PURE__ */ jsxRuntimeExports.jsxs("p", { className: "text-sm text-gray-400", children: [
-        "Export package ready — ",
-        totalFiles,
-        " files"
-      ] }),
-      /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "text-[10px] bg-green-500/10 text-green-400 px-1.5 py-0.5 rounded uppercase tracking-wider", children: "Ready" })
+      ] }, asset.id)) })
     ] }),
-    /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "grid grid-cols-2 gap-2 text-xs", children: [
-      slideCount > 0 && /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "bg-white/5 border border-white/10 rounded-lg p-2", children: [
-        /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "text-purple-400", children: slideCount }),
-        " ",
-        /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "text-gray-500", children: "slides" })
+    activeTab === "captions" && /* @__PURE__ */ jsxRuntimeExports.jsxs("section", { className: "space-y-4", children: [
+      /* @__PURE__ */ jsxRuntimeExports.jsx(
+        TabHeader,
+        {
+          title: "Captions",
+          subtitle: `${captions.length} caption${captions.length === 1 ? "" : "s"} ready to edit, approve, or regenerate`,
+          actions: /* @__PURE__ */ jsxRuntimeExports.jsxs(jsxRuntimeExports.Fragment, { children: [
+            /* @__PURE__ */ jsxRuntimeExports.jsx(ActionButton, { onClick: () => approveAll("captions"), busy: busyKey === "bulk:captions", label: "Approve all" }),
+            /* @__PURE__ */ jsxRuntimeExports.jsx(ActionButton, { onClick: () => regenerateAll("captions"), busy: busyKey === "bulk-regenerate:captions", label: "Regenerate all" })
+          ] })
+        }
+      ),
+      /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "space-y-4", children: captions.map((caption) => {
+        const draft = captionDrafts[caption.id] || {
+          cta: caption.cta || "",
+          caption: caption.caption || "",
+          hashtagsText: (caption.hashtags || []).join(" ")
+        };
+        const isEditing = editingCaptionId === caption.id;
+        return /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "rounded-2xl border border-white/10 bg-white/5 p-5 space-y-4", children: [
+          /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-start justify-between gap-3", children: [
+            /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { children: [
+              /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-center gap-2 flex-wrap", children: [
+                /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { className: "text-xs text-gray-400", children: [
+                  labelSocialAssetRole(caption.role),
+                  " · ",
+                  labelSocialPlatform(caption.platform)
+                ] }),
+                /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: `text-[10px] px-2 py-0.5 rounded border ${itemStatusStyles[caption.status || "draft"]}`, children: statusLabel(caption.status) })
+              ] }),
+              /* @__PURE__ */ jsxRuntimeExports.jsx("h4", { className: "text-lg font-semibold text-gray-100 mt-2", children: caption.cta || "Caption copy" })
+            ] }),
+            /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-center gap-2 flex-wrap justify-end", children: [
+              /* @__PURE__ */ jsxRuntimeExports.jsx(
+                "button",
+                {
+                  onClick: () => navigator.clipboard.writeText(caption.caption || "").catch(() => {
+                  }),
+                  className: "px-3 py-2 rounded-lg border border-white/10 bg-white/5 text-xs text-gray-300 hover:bg-white/10",
+                  children: "Copy"
+                }
+              ),
+              /* @__PURE__ */ jsxRuntimeExports.jsx(ActionButton, { onClick: () => regenerateCaption(caption.id), busy: busyKey === `caption-regenerate:${caption.id}`, label: "Regenerate" }),
+              /* @__PURE__ */ jsxRuntimeExports.jsx(ActionButton, { onClick: () => approveCaption(caption.id), busy: busyKey === `caption:${caption.id}`, label: "Approve" }),
+              /* @__PURE__ */ jsxRuntimeExports.jsx(
+                "button",
+                {
+                  onClick: () => {
+                    setEditingCaptionId(caption.id);
+                    setCaptionDrafts((prev) => ({
+                      ...prev,
+                      [caption.id]: {
+                        cta: caption.cta || "",
+                        caption: caption.caption || "",
+                        hashtagsText: (caption.hashtags || []).join(" ")
+                      }
+                    }));
+                  },
+                  className: "px-3 py-2 rounded-lg border border-purple-500/20 bg-purple-500/10 text-xs text-purple-200 hover:bg-purple-500/20",
+                  children: "Edit"
+                }
+              )
+            ] })
+          ] }),
+          isEditing ? /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "space-y-3", children: [
+            /* @__PURE__ */ jsxRuntimeExports.jsxs("label", { className: "block space-y-1", children: [
+              /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "text-[10px] uppercase tracking-[0.25em] text-gray-500", children: "Caption text" }),
+              /* @__PURE__ */ jsxRuntimeExports.jsx(
+                "textarea",
+                {
+                  value: draft.caption,
+                  onChange: (e) => setCaptionDrafts((prev) => ({
+                    ...prev,
+                    [caption.id]: { ...draft, caption: e.target.value }
+                  })),
+                  className: "min-h-36 w-full rounded-xl border border-white/10 bg-black/20 px-4 py-3 text-sm text-gray-100 outline-none focus:border-purple-500/40"
+                }
+              )
+            ] }),
+            /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "grid gap-3 md:grid-cols-2", children: [
+              /* @__PURE__ */ jsxRuntimeExports.jsxs("label", { className: "block space-y-1", children: [
+                /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "text-[10px] uppercase tracking-[0.25em] text-gray-500", children: "CTA" }),
+                /* @__PURE__ */ jsxRuntimeExports.jsx(
+                  "input",
+                  {
+                    value: draft.cta,
+                    onChange: (e) => setCaptionDrafts((prev) => ({
+                      ...prev,
+                      [caption.id]: { ...draft, cta: e.target.value }
+                    })),
+                    className: "w-full rounded-xl border border-white/10 bg-black/20 px-4 py-3 text-sm text-gray-100 outline-none focus:border-purple-500/40"
+                  }
+                )
+              ] }),
+              /* @__PURE__ */ jsxRuntimeExports.jsxs("label", { className: "block space-y-1", children: [
+                /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "text-[10px] uppercase tracking-[0.25em] text-gray-500", children: "Hashtags" }),
+                /* @__PURE__ */ jsxRuntimeExports.jsx(
+                  "input",
+                  {
+                    value: draft.hashtagsText,
+                    onChange: (e) => setCaptionDrafts((prev) => ({
+                      ...prev,
+                      [caption.id]: { ...draft, hashtagsText: e.target.value }
+                    })),
+                    className: "w-full rounded-xl border border-white/10 bg-black/20 px-4 py-3 text-sm text-gray-100 outline-none focus:border-purple-500/40"
+                  }
+                )
+              ] })
+            ] }),
+            /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex flex-wrap gap-2", children: [
+              /* @__PURE__ */ jsxRuntimeExports.jsx(
+                "button",
+                {
+                  onClick: () => saveCaption(caption.id),
+                  className: "px-4 py-2 rounded-lg border border-emerald-500/30 bg-emerald-500/10 text-sm text-emerald-200 hover:bg-emerald-500/20",
+                  children: "Save"
+                }
+              ),
+              /* @__PURE__ */ jsxRuntimeExports.jsx(
+                "button",
+                {
+                  onClick: () => {
+                    setEditingCaptionId(null);
+                    setCaptionDrafts((prev) => {
+                      const next = { ...prev };
+                      delete next[caption.id];
+                      return next;
+                    });
+                  },
+                  className: "px-4 py-2 rounded-lg border border-white/10 bg-white/5 text-sm text-gray-300 hover:bg-white/10",
+                  children: "Cancel"
+                }
+              )
+            ] })
+          ] }) : /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "space-y-3", children: [
+            /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "rounded-xl border border-white/10 bg-black/20 p-4", children: /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-sm text-gray-200 whitespace-pre-wrap", children: caption.caption || "No caption text." }) }),
+            caption.hashtags?.length ? /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "flex flex-wrap gap-2", children: caption.hashtags.map((tag) => /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "px-2 py-1 rounded-full bg-purple-500/10 text-xs text-purple-200 border border-purple-500/20", children: tag }, `${caption.id}-${tag}`)) }) : null
+          ] })
+        ] }, caption.id);
+      }) })
+    ] }),
+    activeTab === "exports" && /* @__PURE__ */ jsxRuntimeExports.jsxs("section", { className: "grid gap-4 lg:grid-cols-[1.1fr_0.9fr]", children: [
+      /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "rounded-2xl border border-white/10 bg-white/5 p-5 space-y-4", children: [
+        /* @__PURE__ */ jsxRuntimeExports.jsx(
+          TabHeader,
+          {
+            title: "Exports",
+            subtitle: "Package the normalized outputs with manifest and sanitized filenames.",
+            actions: /* @__PURE__ */ jsxRuntimeExports.jsx(ActionButton, { onClick: exportPackage, busy: busyKey === "export", label: exportInfo?.status === "ready" ? "Re-export" : "Export package" })
+          }
+        ),
+        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "grid gap-3 md:grid-cols-2", children: [
+          /* @__PURE__ */ jsxRuntimeExports.jsx(MetricCard, { label: "Slides", value: String(summary.counts.slides) }),
+          /* @__PURE__ */ jsxRuntimeExports.jsx(MetricCard, { label: "Social assets", value: String(summary.counts.socialAssets) }),
+          /* @__PURE__ */ jsxRuntimeExports.jsx(MetricCard, { label: "Captions", value: String(summary.counts.captions) }),
+          /* @__PURE__ */ jsxRuntimeExports.jsx(MetricCard, { label: "Formats", value: (campaign.advancedSettings.exportFormats || []).join(", ").toUpperCase() })
+        ] }),
+        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "rounded-xl border border-white/10 bg-black/20 p-4 space-y-2", children: [
+          /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-sm text-gray-300", children: "Selected formats are exported with the current edited captions and normalized counts." }),
+          /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-xs text-gray-500", children: "Manifest: `manifest.json` and `metadata/asset-manifest.json`" }),
+          /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-xs text-gray-500", children: "Files are sanitized to avoid invalid filenames on disk." })
+        ] })
       ] }),
-      assetCount > 0 && /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "bg-white/5 border border-white/10 rounded-lg p-2", children: [
-        /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "text-amber-400", children: assetCount }),
-        " ",
-        /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "text-gray-500", children: "social assets" })
-      ] }),
-      captionCount > 0 && /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "bg-white/5 border border-white/10 rounded-lg p-2", children: [
-        /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "text-green-400", children: captionCount }),
-        " ",
-        /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "text-gray-500", children: "captions" })
-      ] }),
-      /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "bg-white/5 border border-white/10 rounded-lg p-2", children: [
-        /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "text-blue-400", children: "ZIP" }),
-        " ",
-        /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "text-gray-500", children: "PPTX + PDF + PNG" })
+      /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "rounded-2xl border border-white/10 bg-white/5 p-5 space-y-4", children: [
+        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { children: [
+          /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-xs uppercase tracking-[0.25em] text-gray-500", children: "Latest export" }),
+          /* @__PURE__ */ jsxRuntimeExports.jsx("h3", { className: "text-lg font-semibold text-gray-100 mt-1", children: "Download info" })
+        ] }),
+        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "space-y-2 rounded-xl border border-white/10 bg-black/20 p-4 text-sm", children: [
+          /* @__PURE__ */ jsxRuntimeExports.jsx(InfoRow, { label: "Export id", value: exportInfo?.exportId || exportJobId || "—" }),
+          /* @__PURE__ */ jsxRuntimeExports.jsx(InfoRow, { label: "Status", value: exportInfo?.status || (exportJobId ? "queued" : "not started") }),
+          /* @__PURE__ */ jsxRuntimeExports.jsx(InfoRow, { label: "Path", value: exportInfo?.exportDir || "—", monospace: true })
+        ] }),
+        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex flex-wrap gap-2", children: [
+          exportInfo?.exportDir ? /* @__PURE__ */ jsxRuntimeExports.jsx(
+            "button",
+            {
+              onClick: () => {
+                const api2 = window.electronAPI;
+                if (api2?.openPath) {
+                  api2.openPath(exportInfo.exportDir);
+                }
+              },
+              className: "px-4 py-2 rounded-lg border border-purple-500/30 bg-purple-500/10 text-sm text-purple-200 hover:bg-purple-500/20",
+              children: "Open export folder"
+            }
+          ) : null,
+          /* @__PURE__ */ jsxRuntimeExports.jsx(
+            "button",
+            {
+              onClick: () => setScreen("export"),
+              className: "px-4 py-2 rounded-lg border border-white/10 bg-white/5 text-sm text-gray-300 hover:bg-white/10",
+              children: "Open export screen"
+            }
+          )
+        ] })
       ] })
     ] }),
-    /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex gap-2", children: [
-      /* @__PURE__ */ jsxRuntimeExports.jsx("button", { onClick: () => setScreen("export"), className: "px-4 py-2 bg-purple-500 hover:bg-purple-400 text-white rounded-lg text-sm font-semibold transition-all", children: "Export Package" }),
-      /* @__PURE__ */ jsxRuntimeExports.jsx("button", { onClick: () => setScreen("export"), className: "px-3 py-2 bg-white/5 hover:bg-white/10 text-gray-400 rounded-lg text-xs transition-all border border-white/10", children: "View Files" })
+    activeTab === "warnings" && /* @__PURE__ */ jsxRuntimeExports.jsxs("section", { className: "space-y-4", children: [
+      /* @__PURE__ */ jsxRuntimeExports.jsx(TabHeader, { title: "Warnings", subtitle: `${warnings.length} issue${warnings.length === 1 ? "" : "s"} across summary, media, and export flow` }),
+      warnings.length === 0 ? /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "rounded-2xl border border-emerald-500/20 bg-emerald-500/5 p-5 text-emerald-200", children: "No warnings. The current review set is clean." }) : /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "space-y-3", children: warnings.map((warning, index) => /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: `rounded-2xl border p-4 ${severityStyles[warning.severity]}`, children: /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-start justify-between gap-3", children: [
+        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { children: [
+          /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-[10px] uppercase tracking-[0.25em] opacity-80", children: warning.category }),
+          /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-sm mt-1", children: warning.message })
+        ] }),
+        /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "text-[10px] px-2 py-0.5 rounded-full border border-current/20", children: warning.severity })
+      ] }) }, `${warning.category}-${index}`)) })
     ] })
   ] });
 }
-function WarningsTab({ campaign }) {
-  const warnings = [];
-  if (!campaign.title) warnings.push("Campaign has no title");
-  if (!campaign.cta && campaign.campaignGoal === "invite_attendance") warnings.push("Invitation campaign has no CTA — invitation copy may be weak");
-  if (!campaign.eventDetails?.date && campaign.campaignGoal === "invite_attendance") warnings.push("No event date set — assets will show generic invitation text");
-  if (warnings.length === 0) warnings.push("No warnings — campaign looks good!");
-  return /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "space-y-2", children: warnings.map((w2, i) => /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: `p-3 rounded-lg text-sm ${w2.includes("No warnings") ? "bg-green-500/10 border border-green-500/20 text-green-300" : "bg-amber-500/5 border border-amber-500/20 text-amber-300"}`, children: [
-    w2.includes("No warnings") ? "✓ " : "• ",
-    w2
-  ] }, i)) });
+function TabHeader(props) {
+  return /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-start justify-between gap-3 flex-wrap", children: [
+    /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { children: [
+      /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-xs uppercase tracking-[0.25em] text-gray-500", children: props.title }),
+      /* @__PURE__ */ jsxRuntimeExports.jsx("h3", { className: "text-lg font-semibold text-gray-100 mt-1", children: props.subtitle })
+    ] }),
+    props.actions ? /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "flex items-center gap-2 flex-wrap", children: props.actions }) : null
+  ] });
+}
+function InfoCard$1({ label, value }) {
+  return /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "rounded-xl border border-white/10 bg-black/20 p-4", children: [
+    /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-[10px] uppercase tracking-[0.25em] text-gray-500", children: label }),
+    /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "mt-1 text-sm text-gray-100 break-words", children: value || "—" })
+  ] });
+}
+function MetricCard({ label, value }) {
+  return /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "rounded-xl border border-white/10 bg-black/20 p-4", children: [
+    /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-[10px] uppercase tracking-[0.25em] text-gray-500", children: label }),
+    /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "mt-2 text-2xl font-semibold text-gray-100 break-words", children: value })
+  ] });
+}
+function InfoRow({ label, value, monospace }) {
+  return /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-start justify-between gap-4", children: [
+    /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "text-gray-400", children: label }),
+    /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: monospace ? "font-mono text-xs text-gray-300 text-right break-all" : "text-gray-200 text-right break-words", children: value })
+  ] });
+}
+function ActionButton({ label, onClick, busy }) {
+  return /* @__PURE__ */ jsxRuntimeExports.jsx(
+    "button",
+    {
+      onClick,
+      disabled: busy,
+      className: "px-3 py-2 rounded-lg border border-white/10 bg-white/5 text-xs text-gray-300 hover:bg-white/10 disabled:opacity-50 disabled:cursor-not-allowed",
+      children: busy ? "Working..." : label
+    }
+  );
 }
 const layoutStyles = {
   title_cinematic: { bg: "from-purple-900 via-indigo-900 to-slate-900", accent: "#a78bfa", text: "#f5f3ff", subtext: "#c4b5fd" },
@@ -12359,7 +12883,7 @@ function getLayoutStyle(purpose, layoutFamily) {
   if (purpose === "invitation") return layoutStyles.appeal_invitation;
   return layoutStyles[layoutFamily] || layoutStyles.point_declaration;
 }
-function SlideCanvas({ slide }) {
+function SlideCanvas({ slide, totalSlides }) {
   const style = getLayoutStyle(slide.purpose, slide.layoutFamily);
   const purpose = slide.purpose;
   const isTitle = purpose === "title";
@@ -12381,7 +12905,8 @@ function SlideCanvas({ slide }) {
         /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "absolute bottom-8 left-8 w-32 h-32 rounded-full opacity-[0.03]", style: { background: style.accent } }),
         /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { className: "absolute bottom-5 right-7 text-[11px] opacity-25 z-10", style: { color: style.subtext }, children: [
           slide.index,
-          " / 8"
+          " / ",
+          totalSlides || 8
         ] }),
         isTitle && /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "relative z-10 flex-1 flex flex-col items-center justify-center px-12 py-10 text-center", children: [
           /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "mb-6 w-20 h-0.5 rounded-full opacity-50", style: { background: style.accent } }),
@@ -12532,7 +13057,7 @@ function SlidePreviewScreen() {
         ] })
       ] }),
       /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "flex-1 space-y-4", children: selected ? /* @__PURE__ */ jsxRuntimeExports.jsxs(jsxRuntimeExports.Fragment, { children: [
-        /* @__PURE__ */ jsxRuntimeExports.jsx(SlideCanvas, { slide: selected }),
+        /* @__PURE__ */ jsxRuntimeExports.jsx(SlideCanvas, { slide: selected, totalSlides: slides.length }),
         /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "grid grid-cols-4 gap-3 text-xs", children: [
           /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "bg-white/5 border border-white/10 rounded-lg p-3", children: [
             /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-gray-500 uppercase tracking-wider mb-0.5", children: "Purpose" }),
@@ -12711,7 +13236,25 @@ function buildAssetDataFromCampaign(campaign, apiAssets) {
       };
     });
   }
-  if (assetIds.length === 0) return [];
+  if (assetIds.length === 0 && allSpecs.length === 0) return [];
+  if (assetIds.length === 0 && allSpecs.length > 0) {
+    return allSpecs.map((spec, i) => ({
+      id: `asset-${i}`,
+      platform: spec.platform,
+      format: spec.format,
+      width: spec.width,
+      height: spec.height,
+      role: spec.role,
+      layoutFamily: spec.layoutFamily,
+      imageRole: spec.imageRole,
+      headline: campaign.title || `Asset ${i + 1}`,
+      caption: "",
+      cta: "",
+      qualityScore: campaign.qualityResults?.score || 85,
+      warnings: campaign.qualityResults?.warnings || [],
+      status: "draft"
+    }));
+  }
   return assetIds.map((id2, i) => {
     const spec = allSpecs[i % allSpecs.length];
     return {
@@ -12738,6 +13281,7 @@ function AssetCard({ asset }) {
   const isStory = isVertical && asset.height >= 1920;
   const [showDetails, setShowDetails] = reactExports.useState(false);
   const [copied, setCopied] = reactExports.useState(false);
+  const statusLabel2 = asset.status === "ready" ? "Ready" : asset.status === "generating" ? "Regenerating" : asset.status === "failed" ? "Failed" : "Draft";
   const handleCopyCaption = () => {
     if (asset.caption) {
       navigator.clipboard.writeText(asset.caption).then(() => {
@@ -12786,8 +13330,8 @@ function AssetCard({ asset }) {
     ),
     /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "p-3 space-y-2 flex-1 flex flex-col", children: [
       /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-center justify-between", children: [
-        /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "text-[11px] font-semibold text-gray-200 capitalize", children: labelSocialAssetRole(asset.role) || asset.role.replace(/_/g, " ") }),
-        /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: `text-[10px] px-1.5 py-0.5 rounded font-medium ${asset.status === "ready" ? "bg-green-500/10 text-green-400" : "bg-white/5 text-gray-500"}`, children: asset.status === "ready" ? "Ready" : "Draft" })
+        /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "text-[11px] font-semibold text-gray-200 capitalize", children: labelSocialAssetRole(asset.role) || humanize(asset.role) }),
+        /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: `text-[10px] px-1.5 py-0.5 rounded font-medium ${asset.status === "ready" ? "bg-green-500/10 text-green-400" : asset.status === "failed" ? "bg-red-500/10 text-red-400" : asset.status === "generating" ? "bg-amber-500/10 text-amber-300" : "bg-white/5 text-gray-500"}`, children: statusLabel2 })
       ] }),
       /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-xs text-gray-300 line-clamp-2", children: asset.headline }),
       asset.cta && /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "inline-block text-[10px] px-2 py-0.5 rounded-full text-purple-300 bg-purple-500/10 w-fit", children: asset.cta }),
@@ -13288,7 +13832,7 @@ const STATUS_COLORS = {
 function TopBar() {
   const { setScreen, campaign, saveCampaign, toggleDrawer, drawerOpen } = useAppStore();
   const status = campaign.status || "draft";
-  const statusLabel = STATUS_LABELS[status] || status;
+  const statusLabel2 = STATUS_LABELS[status] || status;
   const statusColor = STATUS_COLORS[status] || STATUS_COLORS.draft;
   return /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-center justify-between px-6 py-3 border-b border-white/5 bg-gray-900/50", children: [
     /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-center gap-3", children: [
@@ -13305,7 +13849,7 @@ function TopBar() {
       ),
       /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "text-gray-600", children: "|" }),
       /* @__PURE__ */ jsxRuntimeExports.jsx("h2", { className: "text-sm font-semibold text-gray-200 truncate max-w-md", children: campaign.title || "Untitled Campaign" }),
-      /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: `text-[10px] px-2 py-0.5 rounded border ${statusColor}`, children: statusLabel })
+      /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: `text-[10px] px-2 py-0.5 rounded border ${statusColor}`, children: statusLabel2 })
     ] }),
     /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-center gap-2", children: [
       /* @__PURE__ */ jsxRuntimeExports.jsx(
@@ -13813,10 +14357,6 @@ function App() {
       case "outputs":
         return /* @__PURE__ */ jsxRuntimeExports.jsx(ConfigureScreen, {});
       case "configure":
-        return /* @__PURE__ */ jsxRuntimeExports.jsx(ConfigureScreen, {});
-      case "details":
-        return /* @__PURE__ */ jsxRuntimeExports.jsx(ConfigureScreen, {});
-      case "style":
         return /* @__PURE__ */ jsxRuntimeExports.jsx(ConfigureScreen, {});
       case "generating":
         return /* @__PURE__ */ jsxRuntimeExports.jsx(GeneratingScreen, {});

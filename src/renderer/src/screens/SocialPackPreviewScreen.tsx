@@ -134,7 +134,26 @@ function buildAssetDataFromCampaign(campaign: any, apiAssets?: any[]): SocialAss
     });
   }
 
-  if (assetIds.length === 0) return [];
+  if (assetIds.length === 0 && allSpecs.length === 0) return [];
+
+  if (assetIds.length === 0 && allSpecs.length > 0) {
+    return allSpecs.map((spec: any, i: number) => ({
+      id: `asset-${i}`,
+      platform: spec.platform,
+      format: spec.format,
+      width: spec.width,
+      height: spec.height,
+      role: spec.role,
+      layoutFamily: spec.layoutFamily,
+      imageRole: spec.imageRole,
+      headline: campaign.title || `Asset ${i + 1}`,
+      caption: '',
+      cta: '',
+      qualityScore: campaign.qualityResults?.score || 85,
+      warnings: campaign.qualityResults?.warnings || [],
+      status: 'draft',
+    }));
+  }
 
   return assetIds.map((id: string, i: number) => {
     const spec = allSpecs[i % allSpecs.length];
@@ -163,6 +182,7 @@ function AssetCard({ asset }: { asset: SocialAssetData }) {
   const isStory = isVertical && asset.height >= 1920;
   const [showDetails, setShowDetails] = useState(false);
   const [copied, setCopied] = useState(false);
+  const statusLabel = asset.status === 'ready' ? 'Ready' : asset.status === 'generating' ? 'Regenerating' : asset.status === 'failed' ? 'Failed' : 'Draft';
 
   const handleCopyCaption = () => {
     if (asset.caption) {
@@ -214,9 +234,11 @@ function AssetCard({ asset }: { asset: SocialAssetData }) {
       {/* Info + Actions */}
       <div className="p-3 space-y-2 flex-1 flex flex-col">
         <div className="flex items-center justify-between">
-          <span className="text-[11px] font-semibold text-gray-200 capitalize">{labelSocialAssetRole(asset.role) || asset.role.replace(/_/g, ' ')}</span>
-          <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${asset.status === 'ready' ? 'bg-green-500/10 text-green-400' : 'bg-white/5 text-gray-500'}`}>
-            {asset.status === 'ready' ? 'Ready' : 'Draft'}
+          <span className="text-[11px] font-semibold text-gray-200 capitalize">{labelSocialAssetRole(asset.role) || humanize(asset.role)}</span>
+          <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${
+            asset.status === 'ready' ? 'bg-green-500/10 text-green-400' : asset.status === 'failed' ? 'bg-red-500/10 text-red-400' : asset.status === 'generating' ? 'bg-amber-500/10 text-amber-300' : 'bg-white/5 text-gray-500'
+          }`}>
+            {statusLabel}
           </span>
         </div>
         <p className="text-xs text-gray-300 line-clamp-2">{asset.headline}</p>

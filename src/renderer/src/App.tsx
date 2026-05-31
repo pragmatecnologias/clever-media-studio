@@ -54,8 +54,6 @@ export default function App() {
       case 'style': return <StyleSelectionScreen />;
       case 'outputs': return <ConfigureScreen />;
       case 'configure': return <ConfigureScreen />;
-      case 'details': return <ConfigureScreen />;
-      case 'style': return <ConfigureScreen />;
       case 'generating': return <GeneratingScreen />;
       case 'review': return <ReviewScreen />;
       case 'slidePreview': return <SlidePreviewScreen />;

@@ -19,7 +19,7 @@ export interface GenerationJob {
   warnings?: string[];
   deckResults?: { deckId?: string; slideCount?: number; layouts?: number; quality?: unknown; slides?: unknown[] } | null;
   socialResults?: { mode?: string; assetCount?: number; assetIds?: string[] } | null;
-  captionResults?: { cta?: string; hashtagCount?: number; captionPreview?: string; longCaption?: string; hashtags?: string[] }[] | null;
+  captionResults?: { id?: string; role?: string; platform?: string; status?: string; cta?: string; hashtagCount?: number; captionPreview?: string; longCaption?: string; hashtags?: string[] }[] | null;
 }
 
 export interface ExportJob {
@@ -71,6 +71,11 @@ export function createApiClient(baseUrl: string, token?: string) {
       return data;
     },
 
+    updateCampaign: async (campaignId: string, patch: Record<string, unknown>): Promise<CampaignResponseDto> => {
+      const { data } = await client.patch(`/campaigns/${campaignId}`, patch);
+      return data;
+    },
+
     generateMediaPack: async (
       campaignId: string,
       options: {
@@ -105,6 +110,11 @@ export function createApiClient(baseUrl: string, token?: string) {
       return data;
     },
 
+    getExportDownloadInfo: async (campaignId: string, exportId: string): Promise<{ campaignId: string; exportId: string; exportDir?: string; status: string; campaignName?: string }> => {
+      const { data } = await client.get(`/campaigns/${campaignId}/exports/${exportId}/download`);
+      return data;
+    },
+
     getCampaignSlides: async (campaignId: string): Promise<DeckDto> => {
       const { data } = await client.get(`/campaigns/${campaignId}/slides`);
       return data;
@@ -112,6 +122,55 @@ export function createApiClient(baseUrl: string, token?: string) {
 
     getCampaignSocialAssets: async (campaignId: string): Promise<SocialPackDto> => {
       const { data } = await client.get(`/campaigns/${campaignId}/social-assets`);
+      return data;
+    },
+
+    approveSlide: async (campaignId: string, slideId: string) => {
+      const { data } = await client.post(`/campaigns/${campaignId}/slides/${slideId}/approve`);
+      return data;
+    },
+    approveAllSlides: async (campaignId: string) => {
+      const { data } = await client.post(`/campaigns/${campaignId}/slides/approve-all`);
+      return data;
+    },
+    regenerateSlide: async (campaignId: string, slideId: string) => {
+      const { data } = await client.post(`/campaigns/${campaignId}/slides/${slideId}/regenerate`);
+      return data;
+    },
+    regenerateAllSlides: async (campaignId: string) => {
+      const { data } = await client.post(`/campaigns/${campaignId}/slides/regenerate`);
+      return data;
+    },
+    approveSocialAsset: async (campaignId: string, assetId: string) => {
+      const { data } = await client.post(`/campaigns/${campaignId}/social-assets/${assetId}/approve`);
+      return data;
+    },
+    approveAllSocialAssets: async (campaignId: string) => {
+      const { data } = await client.post(`/campaigns/${campaignId}/social-assets/approve-all`);
+      return data;
+    },
+    regenerateSocialAsset: async (campaignId: string, assetId: string) => {
+      const { data } = await client.post(`/campaigns/${campaignId}/social-assets/${assetId}/regenerate`);
+      return data;
+    },
+    regenerateAllSocialAssets: async (campaignId: string) => {
+      const { data } = await client.post(`/campaigns/${campaignId}/social-assets/regenerate`);
+      return data;
+    },
+    approveCaption: async (campaignId: string, captionId: string) => {
+      const { data } = await client.post(`/campaigns/${campaignId}/captions/${captionId}/approve`);
+      return data;
+    },
+    approveAllCaptions: async (campaignId: string) => {
+      const { data } = await client.post(`/campaigns/${campaignId}/captions/approve-all`);
+      return data;
+    },
+    regenerateCaption: async (campaignId: string, captionId: string) => {
+      const { data } = await client.post(`/campaigns/${campaignId}/captions/${captionId}/regenerate`);
+      return data;
+    },
+    regenerateAllCaptions: async (campaignId: string) => {
+      const { data } = await client.post(`/campaigns/${campaignId}/captions/regenerate`);
       return data;
     },
   };
