@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, dialog, shell } from 'electron';
+import { app, BrowserWindow, ipcMain, dialog, shell, clipboard } from 'electron';
 import { join } from 'path';
 import * as fs from 'fs/promises';
 
@@ -63,4 +63,10 @@ ipcMain.handle('file:save', async (_event, { name, content }: { name: string; co
 // IPC: Open export folder
 ipcMain.handle('shell:openPath', async (_event, dirPath: string) => {
   return shell.openPath(dirPath);
+});
+
+// IPC: Copy text to clipboard
+ipcMain.handle('clipboard:copyText', async (_event, text: string) => {
+  clipboard.writeText(text || '');
+  return true;
 });

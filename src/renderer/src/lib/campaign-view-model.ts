@@ -22,6 +22,7 @@ export function selectCampaignViewModel(campaign: CampaignState, backendCampaign
     deckResults: campaign.deckResults,
     socialResults: campaign.socialResults,
     captionResults: campaign.captionResults ? (campaign.captionResults as any[]) : [],
+    exportResults: campaign.exportResults as any,
     warnings: Array.isArray((campaign.analysis as any)?.warnings) ? (campaign.analysis as any).warnings : [],
     analysis: campaign.analysis as any,
     createdAt: new Date().toISOString(),
@@ -33,6 +34,7 @@ export function selectCampaignViewModel(campaign: CampaignState, backendCampaign
     deckResults: campaign.deckResults,
     socialResults: campaign.socialResults,
     captionResults: campaign.captionResults ? (campaign.captionResults as any[]) : [],
+    exportResults: campaign.exportResults as any,
     qualityResults: campaign.deckResults ? (campaign.deckResults as any)?.quality : null,
   });
 

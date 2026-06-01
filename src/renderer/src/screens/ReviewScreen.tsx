@@ -1,8 +1,9 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useAppStore, type CampaignState } from '../lib/store';
-import { createApiClient, type CampaignResponseDto } from '../lib/api';
+import { createApiClient, type CampaignResponseDto, type ExportDownloadInfo } from '../lib/api';
 import { PRESETS } from '../lib/presets';
 import { selectCampaignViewModel } from '../lib/campaign-view-model';
+import { selectCampaignExportViewModel } from '../lib/export-view-model';
 import {
   humanize,
   labelCampaignGoal,
@@ -10,6 +11,7 @@ import {
   labelCampaignType,
   labelLanguage,
   labelLayoutFamily,
+  labelOutput,
   labelSocialAssetRole,
   labelSocialPlatform,
 } from '../lib/labels';
@@ -76,6 +78,14 @@ function classifyWarning(message: string): 'info' | 'warning' | 'error' {
   return 'info';
 }
 
+function normalizeRequestError(err: any, fallback: string): string {
+  const message = err?.response?.data?.message || err?.message || '';
+  if (/ECONNREFUSED|ENOTFOUND|EHOSTUNREACH|Network Error|connect\s+ECONNREFUSED/i.test(message)) {
+    return fallback;
+  }
+  return message || fallback;
+}
+
 export default function ReviewScreen() {
   const { campaign, backendUrl, setScreen, updateCampaign } = useAppStore();
   const api = useMemo(() => createApiClient(backendUrl), [backendUrl]);
@@ -83,17 +93,21 @@ export default function ReviewScreen() {
   const [activeTab, setActiveTab] = useState<ReviewTab>('overview');
   const [busyKey, setBusyKey] = useState<string | null>(null);
   const [screenError, setScreenError] = useState('');
-  const [exportInfo, setExportInfo] = useState<{ campaignId: string; exportId: string; exportDir?: string; status: string; campaignName?: string } | null>(null);
+  const [exportInfo, setExportInfo] = useState<ExportDownloadInfo | null>(null);
   const [editingCaptionId, setEditingCaptionId] = useState<string | null>(null);
   const [captionDrafts, setCaptionDrafts] = useState<Record<string, CaptionDraft>>({});
 
   const view = useMemo(() => selectCampaignViewModel(campaign, backendCampaign), [campaign, backendCampaign]);
+  const exportView = useMemo(
+    () => selectCampaignExportViewModel(campaign, backendCampaign, exportInfo, screenError),
+    [backendCampaign, campaign, exportInfo, screenError],
+  );
   const preset = resolvePreset(campaign);
   const slides = view.generatedMedia.deck?.slides || [];
   const socialAssets = view.generatedMedia.socialPack?.assets || [];
   const captions = view.generatedMedia.captions || [];
   const summary = view.summary;
-  const exportJobId = backendCampaign?.exportJobId || campaign.generationJobId || '';
+  const exportJobId = exportView.downloadId;
 
   useEffect(() => {
     let cancelled = false;
@@ -110,6 +124,7 @@ export default function ReviewScreen() {
           deckResults: data.generatedMedia.deck || campaign.deckResults,
           socialResults: data.generatedMedia.socialPack || campaign.socialResults,
           captionResults: data.generatedMedia.captions || campaign.captionResults,
+          exportResults: data.generatedMedia.exports?.[0] || campaign.exportResults,
         });
 
         if (data.exportJobId) {
@@ -159,6 +174,7 @@ export default function ReviewScreen() {
       deckResults: data.generatedMedia.deck || campaign.deckResults,
       socialResults: data.generatedMedia.socialPack || campaign.socialResults,
       captionResults: data.generatedMedia.captions || campaign.captionResults,
+      exportResults: data.generatedMedia.exports?.[0] || campaign.exportResults,
     });
     if (data.exportJobId) {
       try {
@@ -179,7 +195,7 @@ export default function ReviewScreen() {
       await action();
       await syncFromBackend();
     } catch (err: any) {
-      setScreenError(err?.response?.data?.message || err?.message || 'Request failed.');
+      setScreenError(normalizeRequestError(err, key.startsWith('export') ? 'Export failed' : 'Request failed.'));
     } finally {
       setBusyKey(null);
     }
@@ -276,6 +292,9 @@ export default function ReviewScreen() {
       setExportInfo(info);
       const data = await api.getCampaign(campaign.campaignId!);
       setBackendCampaign(data);
+      updateCampaign({
+        exportResults: data.generatedMedia.exports?.[0] || campaign.exportResults,
+      });
     });
   };
 
@@ -300,7 +319,7 @@ export default function ReviewScreen() {
     return items;
   }, [captions, exportInfo, slides, socialAssets, summary.warnings]);
 
-  const exportReady = summary.counts.slides > 0 || summary.counts.socialAssets > 0 || summary.counts.captions > 0;
+  const exportReady = exportView.exportStatus === 'ready' || exportView.manifestAvailable;
   const packageName = preset?.name || 'Custom package';
   const visualStyle = campaign.advancedSettings.visualStyle || 'auto';
   const topError = screenError || '';
@@ -409,7 +428,7 @@ export default function ReviewScreen() {
               <MetricCard label="Slides" value={formatCount(summary.counts.slides)} />
               <MetricCard label="Social assets" value={formatCount(summary.counts.socialAssets)} />
               <MetricCard label="Captions" value={formatCount(summary.counts.captions)} />
-              <MetricCard label="Exports" value={formatCount(summary.counts.exports)} />
+              <MetricCard label="Exports" value={formatCount(exportView.manifestAvailable ? 1 : summary.counts.exports)} />
             </div>
             <div className="rounded-xl border border-white/10 bg-black/20 p-4 space-y-3">
               <div className="flex items-center justify-between">
@@ -418,7 +437,7 @@ export default function ReviewScreen() {
               </div>
               <div className="flex items-center justify-between">
                 <span className="text-sm text-gray-300">Export readiness</span>
-                <span className="text-sm font-semibold text-gray-100">{exportReady ? 'Ready' : 'Not ready'}</span>
+                <span className="text-sm font-semibold text-gray-100">{exportView.exportReadinessLabel}</span>
               </div>
               <div className="flex items-center justify-between">
                 <span className="text-sm text-gray-300">Export job</span>
@@ -696,18 +715,18 @@ export default function ReviewScreen() {
               title="Exports"
               subtitle="Package the normalized outputs with manifest and sanitized filenames."
               actions={(
-                <ActionButton onClick={exportPackage} busy={busyKey === 'export'} label={exportInfo?.status === 'ready' ? 'Re-export' : 'Export package'} />
+                <ActionButton onClick={exportPackage} busy={busyKey === 'export'} label={exportView.exportStatus === 'ready' ? 'Export Again' : screenError ? 'Retry Export' : 'Export package'} />
               )}
             />
             <div className="grid gap-3 md:grid-cols-2">
-              <MetricCard label="Slides" value={String(summary.counts.slides)} />
-              <MetricCard label="Social assets" value={String(summary.counts.socialAssets)} />
-              <MetricCard label="Captions" value={String(summary.counts.captions)} />
-              <MetricCard label="Formats" value={(campaign.advancedSettings.exportFormats || []).join(', ').toUpperCase()} />
+              <MetricCard label="Slides" value={String(exportView.slideCount)} />
+              <MetricCard label="Social assets" value={String(exportView.socialAssetCount)} />
+              <MetricCard label="Captions" value={String(exportView.captionCount)} />
+              <MetricCard label="Formats" value={(exportView.selectedExportFormats || []).map((format) => labelOutput(format)).join(', ')} />
             </div>
             <div className="rounded-xl border border-white/10 bg-black/20 p-4 space-y-2">
               <p className="text-sm text-gray-300">Selected formats are exported with the current edited captions and normalized counts.</p>
-              <p className="text-xs text-gray-500">Manifest: `manifest.json` and `metadata/asset-manifest.json`</p>
+              <p className="text-xs text-gray-500">Manifest: {exportView.manifestAvailable ? 'Available' : 'Not available'}</p>
               <p className="text-xs text-gray-500">Files are sanitized to avoid invalid filenames on disk.</p>
             </div>
           </div>
@@ -718,22 +737,61 @@ export default function ReviewScreen() {
               <h3 className="text-lg font-semibold text-gray-100 mt-1">Download info</h3>
             </div>
             <div className="space-y-2 rounded-xl border border-white/10 bg-black/20 p-4 text-sm">
-              <InfoRow label="Export id" value={exportInfo?.exportId || exportJobId || '—'} />
-              <InfoRow label="Status" value={exportInfo?.status || (exportJobId ? 'queued' : 'not started')} />
-              <InfoRow label="Path" value={exportInfo?.exportDir || '—'} monospace />
+              <InfoRow label="Export id" value={exportView.downloadId || '—'} />
+              <InfoRow label="Status" value={exportView.exportStatusLabel} />
+              <InfoRow label="Path" value={exportView.downloadDir || 'Not generated yet'} monospace />
+              <InfoRow label="ZIP file" value={exportView.zipFilePath || 'Not generated yet'} monospace />
             </div>
             <div className="flex flex-wrap gap-2">
-              {exportInfo?.exportDir ? (
+              {exportView.downloadDir ? (
                 <button
                   onClick={() => {
                     const api = (window as any).electronAPI;
                     if (api?.openPath) {
-                      api.openPath(exportInfo.exportDir);
+                      api.openPath(exportView.downloadDir).then((result: string) => {
+                        if (result) {
+                          setScreenError(`Open Folder failed: ${result}`);
+                        }
+                      }).catch(() => {
+                        setScreenError('Open Folder failed.');
+                      });
                     }
                   }}
                   className="px-4 py-2 rounded-lg border border-purple-500/30 bg-purple-500/10 text-sm text-purple-200 hover:bg-purple-500/20"
                 >
-                  Open export folder
+                  Open Folder
+                </button>
+              ) : null}
+              {exportView.zipFilePath ? (
+                <button
+                  onClick={() => {
+                    const api = (window as any).electronAPI;
+                    if (api?.openPath) {
+                      api.openPath(exportView.zipFilePath).then((result: string) => {
+                        if (result) {
+                          setScreenError(`Open ZIP failed: ${result}`);
+                        }
+                      }).catch(() => {
+                        setScreenError('Open ZIP failed.');
+                      });
+                    }
+                  }}
+                  className="px-4 py-2 rounded-lg border border-white/10 bg-white/5 text-sm text-gray-300 hover:bg-white/10"
+                >
+                  Open ZIP
+                </button>
+              ) : null}
+              {exportView.zipFilePath || exportView.downloadDir ? (
+                <button
+                  onClick={() => {
+                    const api = (window as any).electronAPI;
+                    if (api?.copyText) {
+                      api.copyText(exportView.zipFilePath || exportView.downloadDir || '');
+                    }
+                  }}
+                  className="px-4 py-2 rounded-lg border border-white/10 bg-white/5 text-sm text-gray-300 hover:bg-white/10"
+                >
+                  Copy Path
                 </button>
               ) : null}
               <button

@@ -40,11 +40,13 @@ export interface CampaignState {
   };
   outputSelections: { presentationDeck: boolean; socialPack: boolean; captionPack: boolean; thumbnail: boolean };
   generationJobId: string | null;
+  generationError: string | null;
   campaignId: string | null;
   analysis: Record<string, unknown> | null;
   deckResults: Record<string, unknown> | null;
   socialResults: Record<string, unknown> | null;
   captionResults: Record<string, unknown> | null;
+  exportResults: Record<string, unknown> | null;
   status: CampaignStatus;
   advancedSettings: AdvancedSettings;
   presetId: string | null;
@@ -111,7 +113,9 @@ const defaultCampaign: CampaignState = {
   eventDetails: {},
   outputSelections: { presentationDeck: true, socialPack: true, captionPack: true, thumbnail: false },
   generationJobId: null, campaignId: null,
+  generationError: null,
   analysis: null, deckResults: null, socialResults: null, captionResults: null,
+  exportResults: null,
   status: 'draft',
   advancedSettings: { ...defaultAdvancedSettings },
   presetId: null,
@@ -204,10 +208,12 @@ export const useAppStore = create<AppStore>()(
             ...record.snapshot,
             campaignId: null,
             generationJobId: null,
+            generationError: null,
             analysis: null,
             deckResults: null,
             socialResults: null,
             captionResults: null,
+            exportResults: null,
             status: 'draft',
           },
         };

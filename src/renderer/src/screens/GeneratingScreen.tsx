@@ -20,7 +20,7 @@ const phaseNames = [
   { label: 'Creating social assets', range: [40, 69] },
   { label: 'Writing captions', range: [70, 89] },
   { label: 'Finalizing', range: [90, 99] },
-  { label: 'Ready', range: [100, 100] },
+  { label: 'Generated', range: [100, 100] },
 ];
 
 export default function GeneratingScreen() {
@@ -34,6 +34,11 @@ export default function GeneratingScreen() {
   const MAX_POLLS = 120; // 4 minutes max
 
   useEffect(() => {
+    if (campaign.generationError) {
+      setFailed(true);
+      setErrorMsg(campaign.generationError);
+      return;
+    }
     if (!campaign.generationJobId) { setScreen('outputs'); return; }
 
     const poll = setInterval(async () => {
@@ -87,7 +92,7 @@ export default function GeneratingScreen() {
     }, 2000);
 
     return () => clearInterval(poll);
-  }, [campaign.generationJobId, campaign.campaignId]);
+  }, [campaign.generationJobId, campaign.campaignId, campaign.generationError, backendUrl, setScreen, updateCampaign]);
 
   const progress = job?.progress || 0;
   const steps = job?.steps || [];
@@ -102,7 +107,7 @@ export default function GeneratingScreen() {
           failed ? 'bg-red-500/10 text-red-400 border border-red-500/20' :
           'bg-purple-500/10 text-purple-300 border border-purple-500/20 animate-pulse'
         }`}>
-          {done ? 'Ready' : failed ? 'Failed' : currentPhase.label}
+          {done ? 'Generated' : failed ? 'Failed' : currentPhase.label}
         </span>
       </div>
 
@@ -158,15 +163,15 @@ export default function GeneratingScreen() {
             <p>Job: <span className="text-gray-400 font-mono">{(campaign.generationJobId || '').slice(0, 12)}</span></p>
           </div>
           <div className="flex flex-wrap gap-2">
-            <button onClick={() => { setFailed(false); setErrorMsg(''); pollCount.current = 0; setScreen('configure'); }}
+            <button onClick={() => { setFailed(false); setErrorMsg(''); pollCount.current = 0; updateCampaign({ generationError: null }); setScreen('configure'); }}
               className="px-4 py-2 bg-purple-500 hover:bg-purple-400 text-white rounded-lg text-sm font-semibold">
               Retry Generation
             </button>
             <button onClick={() => setScreen('settings')} className="px-4 py-2 bg-white/10 hover:bg-white/15 text-gray-300 rounded-lg text-sm">
               Open Settings
             </button>
-            <button onClick={() => setScreen('import')} className="px-4 py-2 bg-white/5 hover:bg-white/10 text-gray-400 rounded-lg text-sm border border-white/10">
-              Back to Import
+            <button onClick={() => setScreen('configure')} className="px-4 py-2 bg-white/5 hover:bg-white/10 text-gray-400 rounded-lg text-sm border border-white/10">
+              Back to Configure
             </button>
             <button onClick={() => {
               const info = `Error: ${errorMsg}\nBackend: ${backendUrl}\nJob: ${campaign.generationJobId}\nTime: ${new Date().toISOString()}`;

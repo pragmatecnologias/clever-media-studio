@@ -1,6 +1,7 @@
 import React from 'react';
 import { useAppStore, type WorkspaceTab } from '../lib/store';
 import SidebarItem from './SidebarItem';
+import { selectCampaignViewModel } from '../lib/campaign-view-model';
 
 interface NavItem { tab: WorkspaceTab; icon: string; label: string; }
 
@@ -17,14 +18,13 @@ const navItems: NavItem[] = [
 
 export default function Sidebar() {
   const { workspaceTab, setWorkspaceTab, campaign } = useAppStore();
-  const deckResults = campaign.deckResults as any;
-  const socialResults = campaign.socialResults as any;
-  const captionResults = campaign.captionResults as any;
+  const view = selectCampaignViewModel(campaign);
 
   const badges: Partial<Record<WorkspaceTab, number | string>> = {
-    slides: deckResults?.slideCount || null,
-    social: socialResults?.assetCount || socialResults?.assetIds?.length || null,
-    captions: (captionResults?.length) || null,
+    slides: view.summary.counts.slides || null,
+    social: view.summary.counts.socialAssets || null,
+    captions: view.summary.counts.captions || null,
+    exports: view.summary.counts.exports || null,
   };
 
   return (

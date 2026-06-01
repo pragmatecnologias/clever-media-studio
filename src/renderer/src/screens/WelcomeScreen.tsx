@@ -9,15 +9,23 @@ export default function WelcomeScreen() {
     loadCampaign, deleteCampaign, duplicateCampaign, backendUrl, saveCampaign,
   } = useAppStore();
   const [connected, setConnected] = useState<boolean | null>(null);
+  const [backendMeta, setBackendMeta] = useState<{ storeMode?: string; version?: string; databaseConnected?: boolean } | null>(null);
 
   useEffect(() => {
     const api = createApiClient(backendUrl);
-    api.getJobStatus('0').then(() => setConnected(true)).catch(() => {
-      // Try a simple fetch
-      fetch(backendUrl + '/api/v1/jobs/0')
-        .then(r => setConnected(r.status !== 502 && r.status !== 503))
-        .catch(() => setConnected(false));
-    });
+    api.getHealth()
+      .then((health) => {
+        setConnected(true);
+        setBackendMeta({
+          storeMode: health.storeMode,
+          version: health.version,
+          databaseConnected: health.database.connected,
+        });
+      })
+      .catch(() => {
+        setConnected(false);
+        setBackendMeta(null);
+      });
   }, [backendUrl]);
 
   const recent = campaigns.slice(0, 12);
@@ -111,11 +119,15 @@ export default function WelcomeScreen() {
           </span>
           <span className="text-gray-700">·</span>
           <span>{backendUrl}</span>
+          {backendMeta?.storeMode ? <span className="text-gray-700">·</span> : null}
+          {backendMeta?.storeMode ? <span>{backendMeta.storeMode}</span> : null}
+          {backendMeta?.databaseConnected !== undefined ? <span className="text-gray-700">·</span> : null}
+          {backendMeta?.databaseConnected !== undefined ? <span>{backendMeta.databaseConnected ? 'DB connected' : 'DB disconnected'}</span> : null}
         </div>
         <div className="flex items-center gap-3">
           <button onClick={() => setScreen('settings')} className="hover:text-gray-400 transition-colors">Settings</button>
           <span className="text-gray-700">·</span>
-          <span>v1.0</span>
+          <span>{backendMeta?.version || 'v1.0'}</span>
         </div>
       </div>
     </div>

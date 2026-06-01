@@ -7540,10 +7540,12 @@ const defaultCampaign = {
   outputSelections: { presentationDeck: true, socialPack: true, captionPack: true, thumbnail: false },
   generationJobId: null,
   campaignId: null,
+  generationError: null,
   analysis: null,
   deckResults: null,
   socialResults: null,
   captionResults: null,
+  exportResults: null,
   status: "draft",
   advancedSettings: { ...defaultAdvancedSettings },
   presetId: null
@@ -7626,10 +7628,12 @@ const useAppStore = create$1()(
             ...record.snapshot,
             campaignId: null,
             generationJobId: null,
+            generationError: null,
             analysis: null,
             deckResults: null,
             socialResults: null,
             captionResults: null,
+            exportResults: null,
             status: "draft"
           }
         };
@@ -7861,6 +7865,7 @@ function buildCampaignGeneratedMediaDto(input) {
   const exportResults = input.exportResults || null;
   const exportFormatResults = Array.isArray(exportResults?.formats) ? exportResults.formats : [];
   const exportItemResults = Array.isArray(exportResults?.items) ? exportResults.items : [];
+  const exportManifestResults = Array.isArray(exportResults?.manifest?.files) ? exportResults.manifest.files : Array.isArray(exportResults?.manifest?.fileList) ? exportResults.manifest.fileList : [];
   const quality = toQuality(input.qualityResults || input.socialResults?.quality || input.deckResults?.quality);
   return {
     campaignId: input.campaignId,
@@ -7931,11 +7936,12 @@ function buildCampaignGeneratedMediaDto(input) {
       status: exportResults?.status || "ready",
       fileName: asString(exportResults?.fileName || ""),
       filePath: asString(exportResults?.filePath || ""),
+      zipFilePath: asString(exportResults?.zipFilePath || ""),
       fileSizeBytes: toNumber(exportResults?.fileSizeBytes),
       fileCount: toNumber(exportResults?.fileCount) || 0,
       formats: exportFormatResults.map((format) => asString(format)),
       createdAt: asString(exportResults?.createdAt || (/* @__PURE__ */ new Date()).toISOString()),
-      items: exportItemResults.map((item) => ({
+      items: (exportItemResults.length ? exportItemResults : exportManifestResults).map((item) => ({
         name: asString(item.name || ""),
         label: asString(item.label || ""),
         format: asString(item.format || ""),
@@ -7960,6 +7966,7 @@ function selectCampaignViewModel(campaign, backendCampaign) {
     deckResults: campaign.deckResults,
     socialResults: campaign.socialResults,
     captionResults: campaign.captionResults ? campaign.captionResults : [],
+    exportResults: campaign.exportResults,
     warnings: Array.isArray(campaign.analysis?.warnings) ? campaign.analysis.warnings : [],
     analysis: campaign.analysis,
     createdAt: (/* @__PURE__ */ new Date()).toISOString(),
@@ -7970,6 +7977,7 @@ function selectCampaignViewModel(campaign, backendCampaign) {
     deckResults: campaign.deckResults,
     socialResults: campaign.socialResults,
     captionResults: campaign.captionResults ? campaign.captionResults : [],
+    exportResults: campaign.exportResults,
     qualityResults: campaign.deckResults ? campaign.deckResults?.quality : null
   });
   return {
@@ -10565,23 +10573,23 @@ const validators$1 = {};
   };
 });
 const deprecatedWarnings = {};
-validators$1.transitional = function transitional(validator2, version, message) {
+validators$1.transitional = function transitional(validator2, version2, message) {
   function formatMessage(opt, desc) {
     return "[Axios v" + VERSION$1 + "] Transitional option '" + opt + "'" + desc + (message ? ". " + message : "");
   }
   return (value, opt, opts) => {
     if (validator2 === false) {
       throw new AxiosError$1(
-        formatMessage(opt, " has been removed" + (version ? " in " + version : "")),
+        formatMessage(opt, " has been removed" + (version2 ? " in " + version2 : "")),
         AxiosError$1.ERR_DEPRECATED
       );
     }
-    if (version && !deprecatedWarnings[opt]) {
+    if (version2 && !deprecatedWarnings[opt]) {
       deprecatedWarnings[opt] = true;
       console.warn(
         formatMessage(
           opt,
-          " has been deprecated since v" + version + " and will be removed in the near future"
+          " has been deprecated since v" + version2 + " and will be removed in the near future"
         )
       );
     }
@@ -11076,6 +11084,7 @@ function createApiClient(baseUrl, token) {
         language: campaign.language,
         passageOrTopic: campaign.passageOrTopic,
         eventDetails: campaign.eventDetails,
+        campaignSettings: campaign.advancedSettings,
         analysis: analysis || void 0
       });
       return data;
@@ -11096,9 +11105,13 @@ function createApiClient(baseUrl, token) {
       const { data } = await client2.get(`/jobs/${jobId}`);
       return data;
     },
-    exportCampaign: async (campaignId, formats2) => {
+    getHealth: async () => {
+      const { data } = await client2.get("/health");
+      return data;
+    },
+    exportCampaign: async (campaignId, formats) => {
       const { data } = await client2.post(`/campaigns/${campaignId}/export`, {
-        formats: formats2,
+        formats,
         includeSource: true,
         includeMetadata: true
       });
@@ -11179,10 +11192,19 @@ function WelcomeScreen() {
     saveCampaign
   } = useAppStore();
   const [connected, setConnected] = reactExports.useState(null);
+  const [backendMeta, setBackendMeta] = reactExports.useState(null);
   reactExports.useEffect(() => {
     const api = createApiClient(backendUrl);
-    api.getJobStatus("0").then(() => setConnected(true)).catch(() => {
-      fetch(backendUrl + "/api/v1/jobs/0").then((r2) => setConnected(r2.status !== 502 && r2.status !== 503)).catch(() => setConnected(false));
+    api.getHealth().then((health) => {
+      setConnected(true);
+      setBackendMeta({
+        storeMode: health.storeMode,
+        version: health.version,
+        databaseConnected: health.database.connected
+      });
+    }).catch(() => {
+      setConnected(false);
+      setBackendMeta(null);
     });
   }, [backendUrl]);
   const recent = campaigns.slice(0, 12);
@@ -11300,12 +11322,16 @@ function WelcomeScreen() {
           connected ? "Backend connected" : connected === false ? "Backend offline" : "Checking..."
         ] }),
         /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "text-gray-700", children: "·" }),
-        /* @__PURE__ */ jsxRuntimeExports.jsx("span", { children: backendUrl })
+        /* @__PURE__ */ jsxRuntimeExports.jsx("span", { children: backendUrl }),
+        backendMeta?.storeMode ? /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "text-gray-700", children: "·" }) : null,
+        backendMeta?.storeMode ? /* @__PURE__ */ jsxRuntimeExports.jsx("span", { children: backendMeta.storeMode }) : null,
+        backendMeta?.databaseConnected !== void 0 ? /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "text-gray-700", children: "·" }) : null,
+        backendMeta?.databaseConnected !== void 0 ? /* @__PURE__ */ jsxRuntimeExports.jsx("span", { children: backendMeta.databaseConnected ? "DB connected" : "DB disconnected" }) : null
       ] }),
       /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-center gap-3", children: [
         /* @__PURE__ */ jsxRuntimeExports.jsx("button", { onClick: () => setScreen("settings"), className: "hover:text-gray-400 transition-colors", children: "Settings" }),
         /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "text-gray-700", children: "·" }),
-        /* @__PURE__ */ jsxRuntimeExports.jsx("span", { children: "v1.0" })
+        /* @__PURE__ */ jsxRuntimeExports.jsx("span", { children: backendMeta?.version || "v1.0" })
       ] })
     ] })
   ] });
@@ -11556,10 +11582,76 @@ function AnalysisScreen() {
     ] });
   }
   if (error) {
-    return /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "max-w-3xl mx-auto space-y-6", children: [
-      /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "bg-red-500/10 border border-red-500/20 rounded-xl p-6 text-center", children: /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-red-300", children: error }) }),
-      /* @__PURE__ */ jsxRuntimeExports.jsx("button", { onClick: () => setScreen("import"), className: "px-4 py-2 bg-white/5 rounded-lg text-sm", children: "Back to Import" })
-    ] });
+    return /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "max-w-3xl mx-auto space-y-6", children: /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "bg-red-500/10 border border-red-500/20 rounded-xl p-6 space-y-4", children: [
+      /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { children: [
+        /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-sm font-semibold text-red-200", children: "Analysis failed" }),
+        /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-sm text-red-300 mt-1", children: error })
+      ] }),
+      /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "rounded-lg border border-red-500/20 bg-black/20 p-3 text-xs text-gray-400 space-y-1", children: [
+        /* @__PURE__ */ jsxRuntimeExports.jsxs("p", { children: [
+          "Backend: ",
+          /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "font-mono text-gray-200 break-all", children: backendUrl })
+        ] }),
+        /* @__PURE__ */ jsxRuntimeExports.jsx("p", { children: "Source text is preserved in the import form and campaign state." })
+      ] }),
+      /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex flex-wrap gap-2", children: [
+        /* @__PURE__ */ jsxRuntimeExports.jsx(
+          "button",
+          {
+            onClick: () => {
+              setError(null);
+              setLoading(true);
+              void (async () => {
+                try {
+                  const api = createApiClient(backendUrl);
+                  const data = await api.analyzeDocument(campaign.sourceText, campaign.language);
+                  setResult(data);
+                  setSelectedType(data.detectedType);
+                  setSelectedGoal(data.campaignGoal);
+                  const cleanTitle = stripLabelPrefix(data.title || "");
+                  const cleanMessage = stripLabelPrefix(data.mainMessage || "");
+                  const cleanPassage = stripLabelPrefix(data.passageOrTopic || "");
+                  const cleanTone = stripLabelPrefix(data.tone || "");
+                  const cleanCTA = stripLabelPrefix(data.cta || "");
+                  const cleanAudience = stripLabelPrefix(data.audienceNeed || "");
+                  updateCampaign({
+                    campaignType: data.detectedType,
+                    campaignGoal: data.campaignGoal,
+                    title: cleanTitle,
+                    subtitle: data.subtitle || "",
+                    passageOrTopic: cleanPassage,
+                    mainMessage: cleanMessage,
+                    audienceNeed: cleanAudience || "",
+                    tone: cleanTone || "",
+                    cta: cleanCTA || "",
+                    eventDetails: {
+                      date: data.eventDetails.date || void 0,
+                      time: data.eventDetails.time || void 0,
+                      timezone: data.eventDetails.timezone || void 0,
+                      locationName: data.eventDetails.locationName || void 0,
+                      address: data.eventDetails.address || void 0,
+                      website: data.eventDetails.website || void 0,
+                      phone: data.eventDetails.phone || void 0,
+                      livestreamUrl: data.eventDetails.livestreamUrl || void 0
+                    },
+                    analysis: data,
+                    status: "analyzed"
+                  });
+                } catch (err) {
+                  setError(err?.message || "Analysis failed");
+                } finally {
+                  setLoading(false);
+                }
+              })();
+            },
+            className: "px-4 py-2 bg-purple-500 hover:bg-purple-400 text-white rounded-lg text-sm font-semibold",
+            children: "Retry Analysis"
+          }
+        ),
+        /* @__PURE__ */ jsxRuntimeExports.jsx("button", { onClick: () => setScreen("settings"), className: "px-4 py-2 bg-white/10 hover:bg-white/15 text-gray-300 rounded-lg text-sm", children: "Open Settings" }),
+        /* @__PURE__ */ jsxRuntimeExports.jsx("button", { onClick: () => setScreen("import"), className: "px-4 py-2 bg-white/5 hover:bg-white/10 text-gray-400 rounded-lg text-sm border border-white/10", children: "Back to Import" })
+      ] })
+    ] }) });
   }
   const confidence = result?.confidence || 0;
   const confidencePct = Math.round(confidence * 100);
@@ -11787,6 +11879,29 @@ const VISUAL_STYLES = [
   { key: "bible_study_clean", label: "Bible Study", desc: "Calm, focused", emoji: "📖" },
   { key: "spanish_church_warm", label: "Iglesia", desc: "Warm, bilingual", emoji: "🙌" }
 ];
+const INVITATION_GOALS = /* @__PURE__ */ new Set(["invite_attendance", "announce_event", "promote_livestream"]);
+function countEnabledOutputs(outputSelections) {
+  return Object.values(outputSelections).filter(Boolean).length;
+}
+function resolveBestPreset(campaign) {
+  const enabledPresets = PRESETS.filter((preset) => countEnabledOutputs(preset.outputSelections) > 0);
+  const exactTypeGoal = enabledPresets.find(
+    (preset) => preset.campaignType === campaign.campaignType && preset.campaignGoal === campaign.campaignGoal
+  );
+  if (exactTypeGoal) return exactTypeGoal;
+  if (campaign.campaignType === "sermon" && INVITATION_GOALS.has(campaign.campaignGoal)) {
+    return enabledPresets.find((preset) => preset.id === "sermon-invitation") || enabledPresets.find((preset) => preset.campaignType === "sermon");
+  }
+  const exactType = enabledPresets.find((preset) => preset.campaignType === campaign.campaignType);
+  if (exactType) return exactType;
+  const exactGoal = enabledPresets.find((preset) => preset.campaignGoal === campaign.campaignGoal);
+  if (exactGoal) return exactGoal;
+  const recommendedMatch = enabledPresets.find(
+    (preset) => preset.recommendedFor.includes(campaign.campaignType) || preset.recommendedFor.includes("*")
+  );
+  if (recommendedMatch) return recommendedMatch;
+  return enabledPresets[0];
+}
 function ConfigureScreen() {
   const { setScreen, campaign, updateCampaign, backendUrl } = useAppStore();
   const [generating, setGenerating] = reactExports.useState(false);
@@ -11794,8 +11909,8 @@ function ConfigureScreen() {
   const outputs = campaign.outputSelections;
   reactExports.useEffect(() => {
     if (!campaign.presetId && campaign.campaignType) {
-      const bestPreset = PRESETS.find((p2) => p2.campaignType === campaign.campaignType) || PRESETS.find((p2) => p2.recommendedFor?.includes(campaign.campaignType));
-      if (bestPreset) {
+      const bestPreset = resolveBestPreset(campaign);
+      if (bestPreset && countEnabledOutputs(bestPreset.outputSelections) > 0) {
         updateCampaign({
           presetId: bestPreset.id,
           campaignType: bestPreset.campaignType,
@@ -11805,7 +11920,10 @@ function ConfigureScreen() {
         });
       }
     }
-  }, [campaign.campaignType, campaign.presetId]);
+  }, [campaign.campaignGoal, campaign.campaignType, campaign.presetId, campaign.advancedSettings, updateCampaign]);
+  reactExports.useEffect(() => {
+    setVisualStyle(campaign.advancedSettings.visualStyle || "auto");
+  }, [campaign.advancedSettings.visualStyle]);
   const toggle = (key) => {
     updateCampaign({ outputSelections: { ...outputs, [key]: !outputs[key] } });
   };
@@ -11814,7 +11932,7 @@ function ConfigureScreen() {
     try {
       const api = createApiClient(backendUrl);
       const createResult = await api.createCampaign(campaign, campaign.analysis);
-      updateCampaign({ campaignId: createResult.campaignId });
+      updateCampaign({ campaignId: createResult.campaignId, generationError: null });
       const adv = campaign.advancedSettings;
       const genResult = await api.generateMediaPack(createResult.campaignId, {
         outputs: {
@@ -11840,16 +11958,19 @@ function ConfigureScreen() {
         includeSource: adv.includeSource,
         includeMetadata: adv.includeMetadata
       });
-      updateCampaign({ generationJobId: genResult.jobId, status: "generating" });
+      updateCampaign({ generationJobId: genResult.jobId, generationError: null, status: "generating" });
       setScreen("generating");
     } catch (err) {
-      console.warn("Generation failed:", err?.message);
+      const message = err?.response?.data?.message || err?.message || "Generation failed";
+      updateCampaign({ generationError: message, status: "failed" });
+      setScreen("generating");
     } finally {
       setGenerating(false);
     }
   };
   const pickedPreset = campaign.presetId;
   const activeOutputs = [outputs.presentationDeck, outputs.socialPack, outputs.captionPack, outputs.thumbnail].filter(Boolean).length;
+  const isGenerateDisabled = generating || activeOutputs === 0;
   return /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "max-w-3xl mx-auto space-y-8", children: [
     /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-center justify-between", children: [
       /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { children: [
@@ -11860,7 +11981,8 @@ function ConfigureScreen() {
         "button",
         {
           onClick: handleGenerate,
-          disabled: generating || activeOutputs === 0,
+          disabled: isGenerateDisabled,
+          "data-testid": "configure-generate-top",
           className: "px-8 py-3 bg-purple-500 hover:bg-purple-400 disabled:opacity-40 disabled:cursor-not-allowed text-white font-semibold rounded-xl text-base transition-all shadow-lg shadow-purple-500/20",
           children: generating ? "Generating..." : "Generate Media Pack"
         }
@@ -11888,6 +12010,7 @@ function ConfigureScreen() {
     /* @__PURE__ */ jsxRuntimeExports.jsx(Section$1, { title: "Visual Style", number: 2, children: /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "grid grid-cols-3 gap-2", children: VISUAL_STYLES.map((s) => /* @__PURE__ */ jsxRuntimeExports.jsxs(
       "button",
       {
+        "data-testid": `configure-visual-style-${s.key}`,
         onClick: () => setVisualStyle(s.key),
         className: `text-left p-3 rounded-lg border transition-all ${visualStyle === s.key ? "border-purple-500/40 bg-purple-500/10" : "border-white/10 bg-white/5 hover:bg-white/8"}`,
         children: [
@@ -11902,6 +12025,7 @@ function ConfigureScreen() {
       /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "grid grid-cols-3 gap-2", children: PRESETS.map((p2) => /* @__PURE__ */ jsxRuntimeExports.jsxs(
         "button",
         {
+          "data-testid": `configure-preset-${p2.id}`,
           onClick: () => {
             updateCampaign({
               outputSelections: { ...p2.outputSelections },
@@ -11921,17 +12045,18 @@ function ConfigureScreen() {
         p2.id
       )) }),
       /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex flex-wrap gap-2 mt-3", children: [
-        /* @__PURE__ */ jsxRuntimeExports.jsx(ToggleChip, { label: "Slides", checked: outputs.presentationDeck, onChange: () => toggle("presentationDeck") }),
-        /* @__PURE__ */ jsxRuntimeExports.jsx(ToggleChip, { label: "Social Pack", checked: outputs.socialPack, onChange: () => toggle("socialPack") }),
-        /* @__PURE__ */ jsxRuntimeExports.jsx(ToggleChip, { label: "Captions", checked: outputs.captionPack, onChange: () => toggle("captionPack") }),
-        /* @__PURE__ */ jsxRuntimeExports.jsx(ToggleChip, { label: "Thumbnail", checked: outputs.thumbnail, onChange: () => toggle("thumbnail") })
+        /* @__PURE__ */ jsxRuntimeExports.jsx(ToggleChip, { dataTestId: "configure-toggle-slides", label: "Slides", checked: outputs.presentationDeck, onChange: () => toggle("presentationDeck") }),
+        /* @__PURE__ */ jsxRuntimeExports.jsx(ToggleChip, { dataTestId: "configure-toggle-social", label: "Social Pack", checked: outputs.socialPack, onChange: () => toggle("socialPack") }),
+        /* @__PURE__ */ jsxRuntimeExports.jsx(ToggleChip, { dataTestId: "configure-toggle-captions", label: "Captions", checked: outputs.captionPack, onChange: () => toggle("captionPack") }),
+        /* @__PURE__ */ jsxRuntimeExports.jsx(ToggleChip, { dataTestId: "configure-toggle-thumbnail", label: "Thumbnail", checked: outputs.thumbnail, onChange: () => toggle("thumbnail") })
       ] })
     ] }),
     /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "flex justify-center pt-4 pb-8", children: /* @__PURE__ */ jsxRuntimeExports.jsx(
       "button",
       {
         onClick: handleGenerate,
-        disabled: generating || activeOutputs === 0,
+        disabled: isGenerateDisabled,
+        "data-testid": "configure-generate-bottom",
         className: "px-10 py-4 bg-purple-500 hover:bg-purple-400 disabled:opacity-40 disabled:cursor-not-allowed text-white font-semibold rounded-xl text-lg transition-all shadow-lg shadow-purple-500/20",
         children: generating ? "Generating..." : "Generate Media Pack"
       }
@@ -11960,11 +12085,12 @@ function Field$1({ label, value, onChange }) {
     )
   ] });
 }
-function ToggleChip({ label, checked, onChange }) {
+function ToggleChip({ dataTestId, label, checked, onChange }) {
   return /* @__PURE__ */ jsxRuntimeExports.jsxs(
     "button",
     {
       onClick: onChange,
+      "data-testid": dataTestId,
       className: `text-xs px-3 py-1.5 rounded-lg border transition-all font-medium ${checked ? "bg-purple-500/20 text-purple-200 border-purple-500/40" : "bg-white/5 text-gray-500 border-white/10 hover:bg-white/8"}`,
       children: [
         checked ? "✓" : "",
@@ -11990,7 +12116,7 @@ const phaseNames = [
   { label: "Creating social assets", range: [40, 69] },
   { label: "Writing captions", range: [70, 89] },
   { label: "Finalizing", range: [90, 99] },
-  { label: "Ready", range: [100, 100] }
+  { label: "Generated", range: [100, 100] }
 ];
 function GeneratingScreen() {
   const { setScreen, campaign, backendUrl, updateCampaign, saveCampaign } = useAppStore();
@@ -12002,6 +12128,11 @@ function GeneratingScreen() {
   const pollCount = reactExports.useRef(0);
   const MAX_POLLS = 120;
   reactExports.useEffect(() => {
+    if (campaign.generationError) {
+      setFailed(true);
+      setErrorMsg(campaign.generationError);
+      return;
+    }
     if (!campaign.generationJobId) {
       setScreen("outputs");
       return;
@@ -12053,14 +12184,14 @@ function GeneratingScreen() {
       }
     }, 2e3);
     return () => clearInterval(poll);
-  }, [campaign.generationJobId, campaign.campaignId]);
+  }, [campaign.generationJobId, campaign.campaignId, campaign.generationError, backendUrl, setScreen, updateCampaign]);
   const progress = job?.progress || 0;
   const steps = job?.steps || [];
   const currentPhase = phaseNames.find((p2) => progress >= p2.range[0] && progress <= p2.range[1]) || phaseNames[0];
   return /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "max-w-3xl mx-auto space-y-8", children: [
     /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-center justify-between", children: [
       /* @__PURE__ */ jsxRuntimeExports.jsx("h2", { className: "text-2xl font-bold", children: "Generating Media" }),
-      /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: `text-sm font-medium px-3 py-1 rounded-full ${done ? "bg-green-500/10 text-green-400 border border-green-500/20" : failed ? "bg-red-500/10 text-red-400 border border-red-500/20" : "bg-purple-500/10 text-purple-300 border border-purple-500/20 animate-pulse"}`, children: done ? "Ready" : failed ? "Failed" : currentPhase.label })
+      /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: `text-sm font-medium px-3 py-1 rounded-full ${done ? "bg-green-500/10 text-green-400 border border-green-500/20" : failed ? "bg-red-500/10 text-red-400 border border-red-500/20" : "bg-purple-500/10 text-purple-300 border border-purple-500/20 animate-pulse"}`, children: done ? "Generated" : failed ? "Failed" : currentPhase.label })
     ] }),
     /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "space-y-2", children: [
       /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "h-3 bg-white/5 rounded-full overflow-hidden", children: /* @__PURE__ */ jsxRuntimeExports.jsx(
@@ -12116,6 +12247,7 @@ function GeneratingScreen() {
               setFailed(false);
               setErrorMsg("");
               pollCount.current = 0;
+              updateCampaign({ generationError: null });
               setScreen("configure");
             },
             className: "px-4 py-2 bg-purple-500 hover:bg-purple-400 text-white rounded-lg text-sm font-semibold",
@@ -12123,7 +12255,7 @@ function GeneratingScreen() {
           }
         ),
         /* @__PURE__ */ jsxRuntimeExports.jsx("button", { onClick: () => setScreen("settings"), className: "px-4 py-2 bg-white/10 hover:bg-white/15 text-gray-300 rounded-lg text-sm", children: "Open Settings" }),
-        /* @__PURE__ */ jsxRuntimeExports.jsx("button", { onClick: () => setScreen("import"), className: "px-4 py-2 bg-white/5 hover:bg-white/10 text-gray-400 rounded-lg text-sm border border-white/10", children: "Back to Import" }),
+        /* @__PURE__ */ jsxRuntimeExports.jsx("button", { onClick: () => setScreen("configure"), className: "px-4 py-2 bg-white/5 hover:bg-white/10 text-gray-400 rounded-lg text-sm border border-white/10", children: "Back to Configure" }),
         /* @__PURE__ */ jsxRuntimeExports.jsx(
           "button",
           {
@@ -12173,6 +12305,141 @@ Time: ${(/* @__PURE__ */ new Date()).toISOString()}`;
     ] })
   ] });
 }
+function resolvePresetLabel(campaign) {
+  const preset = PRESETS.find((item) => item.id === campaign.presetId) || PRESETS.find((item) => item.campaignType === campaign.campaignType && item.campaignGoal === campaign.campaignGoal);
+  return preset?.name || `${labelCampaignType(campaign.campaignType)} / ${labelCampaignGoal(campaign.campaignGoal)}` || "Custom";
+}
+function sanitizeFilename(name) {
+  const sanitized = String(name).trim().replace(/\s+/g, "_").replace(/[^a-zA-Z0-9._-]/g, "_").replace(/_+/g, "_").replace(/^_+|_+$/g, "");
+  return sanitized || "campaign";
+}
+function manifestFiles(manifest) {
+  return Array.isArray(manifest?.fileList) ? manifest.fileList : Array.isArray(manifest?.files) ? manifest.files : [];
+}
+function fallbackFiles(campaign, selectedExportFormats, exportReady) {
+  const base = sanitizeFilename(campaign.title || "campaign");
+  const files = [];
+  if (selectedExportFormats.includes("zip")) {
+    files.push({
+      key: "zip",
+      label: "ZIP Package",
+      fileName: `${base}.zip`,
+      path: `${base}.zip`,
+      format: "zip",
+      availability: exportReady ? "downloadable" : "unavailable",
+      note: exportReady ? "Downloadable from export folder" : "Not generated yet"
+    });
+  }
+  if (selectedExportFormats.includes("pptx")) {
+    files.push({
+      key: "pptx",
+      label: "PPTX",
+      fileName: `${base}.pptx`,
+      path: `campaign/${base}.pptx`,
+      format: "pptx",
+      availability: exportReady ? "included" : "unavailable",
+      note: exportReady ? "Included in ZIP" : "Not generated yet"
+    });
+  }
+  if (selectedExportFormats.includes("pdf")) {
+    files.push({
+      key: "pdf",
+      label: "PDF",
+      fileName: `${base}.pdf`,
+      path: `campaign/${base}.pdf`,
+      format: "pdf",
+      availability: exportReady ? "included" : "unavailable",
+      note: exportReady ? "Included in ZIP" : "Not generated yet"
+    });
+  }
+  if (selectedExportFormats.includes("png")) {
+    files.push({
+      key: "png",
+      label: "PNG Images",
+      fileName: "slides-png/",
+      path: "campaign/deck/slides-png",
+      format: "png",
+      availability: exportReady ? "included" : "unavailable",
+      note: exportReady ? "Included in ZIP as slide image folder" : "Not generated yet"
+    });
+  }
+  if (selectedExportFormats.includes("captions_json")) {
+    files.push({
+      key: "captions_json",
+      label: "Captions JSON",
+      fileName: "captions.json",
+      path: "campaign/captions/captions.json",
+      format: "json",
+      availability: exportReady ? "included" : "unavailable",
+      note: exportReady ? "Included in ZIP" : "Not generated yet"
+    });
+  }
+  if (selectedExportFormats.includes("captions_txt")) {
+    files.push({
+      key: "captions_txt",
+      label: "Captions TXT",
+      fileName: "captions.txt",
+      path: "campaign/captions/captions.txt",
+      format: "txt",
+      availability: exportReady ? "included" : "unavailable",
+      note: exportReady ? "Included in ZIP" : "Not generated yet"
+    });
+  }
+  if (selectedExportFormats.includes("source_txt")) {
+    files.push({
+      key: "source_txt",
+      label: "Source TXT",
+      fileName: "source.txt",
+      path: "campaign/source/source.txt",
+      format: "txt",
+      availability: exportReady ? "included" : "unavailable",
+      note: exportReady ? "Included in ZIP" : "Not generated yet"
+    });
+  }
+  return files;
+}
+function selectCampaignExportViewModel(campaign, backendCampaign, exportDownloadInfo, exportErrorMessage = "") {
+  const view = selectCampaignViewModel(campaign, backendCampaign);
+  const summary = view.summary;
+  const selectedExportFormats = campaign.advancedSettings.exportFormats || [];
+  const exportResults = backendCampaign?.generatedMedia.exports?.[0] || null;
+  const manifest = exportDownloadInfo?.manifest || exportResults?.manifest || null;
+  const files = manifestFiles(manifest);
+  const exportStatus = exportDownloadInfo?.status || exportResults?.status || (campaign.generationJobId ? "queued" : "not_generated");
+  const exportReady = exportStatus === "ready";
+  const downloadDir = exportDownloadInfo?.exportDir || exportResults?.filePath || null;
+  const manifestAvailable = Boolean(downloadDir && exportReady);
+  const availableExportFiles = files.length > 0 ? files.map((file) => ({
+    key: file.name,
+    label: file.label || humanize(file.name),
+    fileName: file.name,
+    path: file.path,
+    format: file.format,
+    availability: file.downloadable ? "downloadable" : exportReady ? "included" : "unavailable",
+    note: file.downloadable ? "Downloadable from export folder" : exportReady ? "Included in ZIP" : "Not generated yet"
+  })) : fallbackFiles(campaign, selectedExportFormats, exportReady);
+  return {
+    title: summary.title,
+    selectedPackageLabel: resolvePresetLabel(campaign),
+    visualStyleLabel: humanize(campaign.advancedSettings.visualStyle || "auto"),
+    slideCount: summary.counts.slides,
+    socialAssetCount: summary.counts.socialAssets,
+    captionCount: summary.counts.captions,
+    totalGeneratedFiles: typeof manifest?.counts?.filesGenerated === "number" ? manifest.counts.filesGenerated : summary.counts.slides + summary.counts.socialAssets + summary.counts.captions,
+    selectedExportFormats,
+    availableExportFiles,
+    exportStatus,
+    exportStatusLabel: exportReady ? "Export ready" : exportStatus === "failed" ? "Export failed" : exportStatus === "running" || exportStatus === "queued" ? "Generating export" : "Not generated yet",
+    exportReadinessLabel: exportErrorMessage ? "Export failed" : exportReady ? "Export ready" : exportDownloadInfo?.exportDir ? "Export available" : "Not generated yet",
+    exportErrorMessage,
+    manifestAvailable,
+    downloadId: exportDownloadInfo?.exportId || exportResults?.exportId || campaign.generationJobId || "",
+    downloadDir,
+    zipFilePath: exportDownloadInfo?.zipFilePath || exportResults?.zipFilePath || null,
+    lastGeneratedAt: manifest?.generatedAt || exportResults?.createdAt || view.summary.updatedAt || null,
+    sourceIncluded: Boolean(campaign.sourceText)
+  };
+}
 const tabs = [
   { id: "overview", label: "Overview" },
   { id: "slides", label: "Slides" },
@@ -12212,6 +12479,13 @@ function classifyWarning(message) {
   if (text.includes("warn") || text.includes("only") || text.includes("incomplete") || text.includes("uncertain")) return "warning";
   return "info";
 }
+function normalizeRequestError$1(err, fallback) {
+  const message = err?.response?.data?.message || err?.message || "";
+  if (/ECONNREFUSED|ENOTFOUND|EHOSTUNREACH|Network Error|connect\s+ECONNREFUSED/i.test(message)) {
+    return fallback;
+  }
+  return message || fallback;
+}
 function ReviewScreen() {
   const { campaign, backendUrl, setScreen, updateCampaign } = useAppStore();
   const api = reactExports.useMemo(() => createApiClient(backendUrl), [backendUrl]);
@@ -12223,12 +12497,16 @@ function ReviewScreen() {
   const [editingCaptionId, setEditingCaptionId] = reactExports.useState(null);
   const [captionDrafts, setCaptionDrafts] = reactExports.useState({});
   const view = reactExports.useMemo(() => selectCampaignViewModel(campaign, backendCampaign), [campaign, backendCampaign]);
+  const exportView = reactExports.useMemo(
+    () => selectCampaignExportViewModel(campaign, backendCampaign, exportInfo, screenError),
+    [backendCampaign, campaign, exportInfo, screenError]
+  );
   const preset = resolvePreset(campaign);
   const slides = view.generatedMedia.deck?.slides || [];
   const socialAssets = view.generatedMedia.socialPack?.assets || [];
   const captions = view.generatedMedia.captions || [];
   const summary = view.summary;
-  const exportJobId = backendCampaign?.exportJobId || campaign.generationJobId || "";
+  const exportJobId = exportView.downloadId;
   reactExports.useEffect(() => {
     let cancelled = false;
     async function loadCampaign() {
@@ -12242,7 +12520,8 @@ function ReviewScreen() {
           status: data.summary.status,
           deckResults: data.generatedMedia.deck || campaign.deckResults,
           socialResults: data.generatedMedia.socialPack || campaign.socialResults,
-          captionResults: data.generatedMedia.captions || campaign.captionResults
+          captionResults: data.generatedMedia.captions || campaign.captionResults,
+          exportResults: data.generatedMedia.exports?.[0] || campaign.exportResults
         });
         if (data.exportJobId) {
           try {
@@ -12287,7 +12566,8 @@ function ReviewScreen() {
       status: data.summary.status,
       deckResults: data.generatedMedia.deck || campaign.deckResults,
       socialResults: data.generatedMedia.socialPack || campaign.socialResults,
-      captionResults: data.generatedMedia.captions || campaign.captionResults
+      captionResults: data.generatedMedia.captions || campaign.captionResults,
+      exportResults: data.generatedMedia.exports?.[0] || campaign.exportResults
     });
     if (data.exportJobId) {
       try {
@@ -12307,7 +12587,7 @@ function ReviewScreen() {
       await action();
       await syncFromBackend();
     } catch (err) {
-      setScreenError(err?.response?.data?.message || err?.message || "Request failed.");
+      setScreenError(normalizeRequestError$1(err, key.startsWith("export") ? "Export failed" : "Request failed."));
     } finally {
       setBusyKey(null);
     }
@@ -12384,6 +12664,9 @@ function ReviewScreen() {
       setExportInfo(info);
       const data = await api.getCampaign(campaign.campaignId);
       setBackendCampaign(data);
+      updateCampaign({
+        exportResults: data.generatedMedia.exports?.[0] || campaign.exportResults
+      });
     });
   };
   const warnings = reactExports.useMemo(() => {
@@ -12402,7 +12685,7 @@ function ReviewScreen() {
     }
     return items;
   }, [captions, exportInfo, slides, socialAssets, summary.warnings]);
-  const exportReady = summary.counts.slides > 0 || summary.counts.socialAssets > 0 || summary.counts.captions > 0;
+  const exportReady = exportView.exportStatus === "ready" || exportView.manifestAvailable;
   const packageName = preset?.name || "Custom package";
   const visualStyle = campaign.advancedSettings.visualStyle || "auto";
   const topError = screenError || "";
@@ -12473,18 +12756,18 @@ function ReviewScreen() {
           /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: `text-[10px] px-2 py-0.5 rounded border ${itemStatusStyles.ready}`, children: exportReady ? "Ready for export" : "Waiting for outputs" })
         ] }),
         /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "grid gap-3 md:grid-cols-2", children: [
-          /* @__PURE__ */ jsxRuntimeExports.jsx(InfoCard$1, { label: "Title", value: summary.title || "Untitled" }),
-          /* @__PURE__ */ jsxRuntimeExports.jsx(InfoCard$1, { label: "Preset", value: packageName }),
-          /* @__PURE__ */ jsxRuntimeExports.jsx(InfoCard$1, { label: "Visual style", value: humanize(visualStyle) }),
-          /* @__PURE__ */ jsxRuntimeExports.jsx(InfoCard$1, { label: "Selected package", value: preset?.description || "Custom configuration" }),
-          /* @__PURE__ */ jsxRuntimeExports.jsx(InfoCard$1, { label: "Type", value: summary.typeLabel }),
-          /* @__PURE__ */ jsxRuntimeExports.jsx(InfoCard$1, { label: "Goal", value: summary.goalLabel }),
-          /* @__PURE__ */ jsxRuntimeExports.jsx(InfoCard$1, { label: "Status", value: summary.statusLabel }),
-          /* @__PURE__ */ jsxRuntimeExports.jsx(InfoCard$1, { label: "Language", value: summary.languageLabel }),
-          /* @__PURE__ */ jsxRuntimeExports.jsx(InfoCard$1, { label: "Passage / topic", value: summary.passageOrTopic || "—" }),
-          /* @__PURE__ */ jsxRuntimeExports.jsx(InfoCard$1, { label: "CTA", value: summary.cta || "—" }),
-          /* @__PURE__ */ jsxRuntimeExports.jsx(InfoCard$1, { label: "Main message", value: summary.mainMessage || "—" }),
-          /* @__PURE__ */ jsxRuntimeExports.jsx(InfoCard$1, { label: "Warnings", value: String(warnings.length) })
+          /* @__PURE__ */ jsxRuntimeExports.jsx(InfoCard$2, { label: "Title", value: summary.title || "Untitled" }),
+          /* @__PURE__ */ jsxRuntimeExports.jsx(InfoCard$2, { label: "Preset", value: packageName }),
+          /* @__PURE__ */ jsxRuntimeExports.jsx(InfoCard$2, { label: "Visual style", value: humanize(visualStyle) }),
+          /* @__PURE__ */ jsxRuntimeExports.jsx(InfoCard$2, { label: "Selected package", value: preset?.description || "Custom configuration" }),
+          /* @__PURE__ */ jsxRuntimeExports.jsx(InfoCard$2, { label: "Type", value: summary.typeLabel }),
+          /* @__PURE__ */ jsxRuntimeExports.jsx(InfoCard$2, { label: "Goal", value: summary.goalLabel }),
+          /* @__PURE__ */ jsxRuntimeExports.jsx(InfoCard$2, { label: "Status", value: summary.statusLabel }),
+          /* @__PURE__ */ jsxRuntimeExports.jsx(InfoCard$2, { label: "Language", value: summary.languageLabel }),
+          /* @__PURE__ */ jsxRuntimeExports.jsx(InfoCard$2, { label: "Passage / topic", value: summary.passageOrTopic || "—" }),
+          /* @__PURE__ */ jsxRuntimeExports.jsx(InfoCard$2, { label: "CTA", value: summary.cta || "—" }),
+          /* @__PURE__ */ jsxRuntimeExports.jsx(InfoCard$2, { label: "Main message", value: summary.mainMessage || "—" }),
+          /* @__PURE__ */ jsxRuntimeExports.jsx(InfoCard$2, { label: "Warnings", value: String(warnings.length) })
         ] })
       ] }),
       /* @__PURE__ */ jsxRuntimeExports.jsxs("section", { className: "rounded-2xl border border-white/10 bg-white/5 p-5 space-y-4", children: [
@@ -12496,7 +12779,7 @@ function ReviewScreen() {
           /* @__PURE__ */ jsxRuntimeExports.jsx(MetricCard, { label: "Slides", value: formatCount(summary.counts.slides) }),
           /* @__PURE__ */ jsxRuntimeExports.jsx(MetricCard, { label: "Social assets", value: formatCount(summary.counts.socialAssets) }),
           /* @__PURE__ */ jsxRuntimeExports.jsx(MetricCard, { label: "Captions", value: formatCount(summary.counts.captions) }),
-          /* @__PURE__ */ jsxRuntimeExports.jsx(MetricCard, { label: "Exports", value: formatCount(summary.counts.exports) })
+          /* @__PURE__ */ jsxRuntimeExports.jsx(MetricCard, { label: "Exports", value: formatCount(exportView.manifestAvailable ? 1 : summary.counts.exports) })
         ] }),
         /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "rounded-xl border border-white/10 bg-black/20 p-4 space-y-3", children: [
           /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-center justify-between", children: [
@@ -12505,7 +12788,7 @@ function ReviewScreen() {
           ] }),
           /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-center justify-between", children: [
             /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "text-sm text-gray-300", children: "Export readiness" }),
-            /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "text-sm font-semibold text-gray-100", children: exportReady ? "Ready" : "Not ready" })
+            /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "text-sm font-semibold text-gray-100", children: exportView.exportReadinessLabel })
           ] }),
           /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-center justify-between", children: [
             /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "text-sm text-gray-300", children: "Export job" }),
@@ -12762,18 +13045,21 @@ function ReviewScreen() {
           {
             title: "Exports",
             subtitle: "Package the normalized outputs with manifest and sanitized filenames.",
-            actions: /* @__PURE__ */ jsxRuntimeExports.jsx(ActionButton, { onClick: exportPackage, busy: busyKey === "export", label: exportInfo?.status === "ready" ? "Re-export" : "Export package" })
+            actions: /* @__PURE__ */ jsxRuntimeExports.jsx(ActionButton, { onClick: exportPackage, busy: busyKey === "export", label: exportView.exportStatus === "ready" ? "Export Again" : screenError ? "Retry Export" : "Export package" })
           }
         ),
         /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "grid gap-3 md:grid-cols-2", children: [
-          /* @__PURE__ */ jsxRuntimeExports.jsx(MetricCard, { label: "Slides", value: String(summary.counts.slides) }),
-          /* @__PURE__ */ jsxRuntimeExports.jsx(MetricCard, { label: "Social assets", value: String(summary.counts.socialAssets) }),
-          /* @__PURE__ */ jsxRuntimeExports.jsx(MetricCard, { label: "Captions", value: String(summary.counts.captions) }),
-          /* @__PURE__ */ jsxRuntimeExports.jsx(MetricCard, { label: "Formats", value: (campaign.advancedSettings.exportFormats || []).join(", ").toUpperCase() })
+          /* @__PURE__ */ jsxRuntimeExports.jsx(MetricCard, { label: "Slides", value: String(exportView.slideCount) }),
+          /* @__PURE__ */ jsxRuntimeExports.jsx(MetricCard, { label: "Social assets", value: String(exportView.socialAssetCount) }),
+          /* @__PURE__ */ jsxRuntimeExports.jsx(MetricCard, { label: "Captions", value: String(exportView.captionCount) }),
+          /* @__PURE__ */ jsxRuntimeExports.jsx(MetricCard, { label: "Formats", value: (exportView.selectedExportFormats || []).map((format) => labelOutput(format)).join(", ") })
         ] }),
         /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "rounded-xl border border-white/10 bg-black/20 p-4 space-y-2", children: [
           /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-sm text-gray-300", children: "Selected formats are exported with the current edited captions and normalized counts." }),
-          /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-xs text-gray-500", children: "Manifest: `manifest.json` and `metadata/asset-manifest.json`" }),
+          /* @__PURE__ */ jsxRuntimeExports.jsxs("p", { className: "text-xs text-gray-500", children: [
+            "Manifest: ",
+            exportView.manifestAvailable ? "Available" : "Not available"
+          ] }),
           /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-xs text-gray-500", children: "Files are sanitized to avoid invalid filenames on disk." })
         ] })
       ] }),
@@ -12783,22 +13069,61 @@ function ReviewScreen() {
           /* @__PURE__ */ jsxRuntimeExports.jsx("h3", { className: "text-lg font-semibold text-gray-100 mt-1", children: "Download info" })
         ] }),
         /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "space-y-2 rounded-xl border border-white/10 bg-black/20 p-4 text-sm", children: [
-          /* @__PURE__ */ jsxRuntimeExports.jsx(InfoRow, { label: "Export id", value: exportInfo?.exportId || exportJobId || "—" }),
-          /* @__PURE__ */ jsxRuntimeExports.jsx(InfoRow, { label: "Status", value: exportInfo?.status || (exportJobId ? "queued" : "not started") }),
-          /* @__PURE__ */ jsxRuntimeExports.jsx(InfoRow, { label: "Path", value: exportInfo?.exportDir || "—", monospace: true })
+          /* @__PURE__ */ jsxRuntimeExports.jsx(InfoRow, { label: "Export id", value: exportView.downloadId || "—" }),
+          /* @__PURE__ */ jsxRuntimeExports.jsx(InfoRow, { label: "Status", value: exportView.exportStatusLabel }),
+          /* @__PURE__ */ jsxRuntimeExports.jsx(InfoRow, { label: "Path", value: exportView.downloadDir || "Not generated yet", monospace: true }),
+          /* @__PURE__ */ jsxRuntimeExports.jsx(InfoRow, { label: "ZIP file", value: exportView.zipFilePath || "Not generated yet", monospace: true })
         ] }),
         /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex flex-wrap gap-2", children: [
-          exportInfo?.exportDir ? /* @__PURE__ */ jsxRuntimeExports.jsx(
+          exportView.downloadDir ? /* @__PURE__ */ jsxRuntimeExports.jsx(
             "button",
             {
               onClick: () => {
                 const api2 = window.electronAPI;
                 if (api2?.openPath) {
-                  api2.openPath(exportInfo.exportDir);
+                  api2.openPath(exportView.downloadDir).then((result) => {
+                    if (result) {
+                      setScreenError(`Open Folder failed: ${result}`);
+                    }
+                  }).catch(() => {
+                    setScreenError("Open Folder failed.");
+                  });
                 }
               },
               className: "px-4 py-2 rounded-lg border border-purple-500/30 bg-purple-500/10 text-sm text-purple-200 hover:bg-purple-500/20",
-              children: "Open export folder"
+              children: "Open Folder"
+            }
+          ) : null,
+          exportView.zipFilePath ? /* @__PURE__ */ jsxRuntimeExports.jsx(
+            "button",
+            {
+              onClick: () => {
+                const api2 = window.electronAPI;
+                if (api2?.openPath) {
+                  api2.openPath(exportView.zipFilePath).then((result) => {
+                    if (result) {
+                      setScreenError(`Open ZIP failed: ${result}`);
+                    }
+                  }).catch(() => {
+                    setScreenError("Open ZIP failed.");
+                  });
+                }
+              },
+              className: "px-4 py-2 rounded-lg border border-white/10 bg-white/5 text-sm text-gray-300 hover:bg-white/10",
+              children: "Open ZIP"
+            }
+          ) : null,
+          exportView.zipFilePath || exportView.downloadDir ? /* @__PURE__ */ jsxRuntimeExports.jsx(
+            "button",
+            {
+              onClick: () => {
+                const api2 = window.electronAPI;
+                if (api2?.copyText) {
+                  api2.copyText(exportView.zipFilePath || exportView.downloadDir || "");
+                }
+              },
+              className: "px-4 py-2 rounded-lg border border-white/10 bg-white/5 text-sm text-gray-300 hover:bg-white/10",
+              children: "Copy Path"
             }
           ) : null,
           /* @__PURE__ */ jsxRuntimeExports.jsx(
@@ -12833,7 +13158,7 @@ function TabHeader(props) {
     props.actions ? /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "flex items-center gap-2 flex-wrap", children: props.actions }) : null
   ] });
 }
-function InfoCard$1({ label, value }) {
+function InfoCard$2({ label, value }) {
   return /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "rounded-xl border border-white/10 bg-black/20 p-4", children: [
     /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-[10px] uppercase tracking-[0.25em] text-gray-500", children: label }),
     /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "mt-1 text-sm text-gray-100 break-words", children: value || "—" })
@@ -13470,229 +13795,346 @@ function SocialPackPreviewScreen() {
     ] })
   ] });
 }
-const formats = [
-  { key: "pptx", label: "PPTX", desc: "PowerPoint presentation" },
+const exportFormats = [
+  { key: "pptx", label: "PPTX", desc: "Presentation deck file" },
   { key: "pdf", label: "PDF", desc: "Portable document" },
-  { key: "png", label: "PNG Images", desc: "Slides as PNG files" },
-  { key: "jpg", label: "JPG Images", desc: "Slides as JPG files" },
-  { key: "captions_json", label: "Captions JSON", desc: "Structured captions data" },
-  { key: "captions_txt", label: "Captions TXT", desc: "Plain text captions" },
-  { key: "zip", label: "ZIP Package", desc: "Full export package" }
+  { key: "png", label: "PNG Images", desc: "Slide image folder" },
+  { key: "captions_json", label: "Captions JSON", desc: "Structured caption data" },
+  { key: "captions_txt", label: "Captions TXT", desc: "Plain text caption data" },
+  { key: "source_txt", label: "Source TXT", desc: "Original source text" },
+  { key: "zip", label: "ZIP Package", desc: "Export archive" }
 ];
-function FileRow({ name, desc }) {
-  return /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-center gap-2 text-xs", children: [
-    /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "text-gray-500 font-mono", children: name }),
-    /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "text-gray-700", children: "—" }),
-    /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "text-gray-600", children: desc })
-  ] });
+function statusClass(status) {
+  if (status === "ready") return "bg-emerald-500/10 text-emerald-300 border-emerald-500/20";
+  if (status === "failed") return "bg-red-500/10 text-red-300 border-red-500/20";
+  if (status === "running" || status === "queued") return "bg-amber-500/10 text-amber-300 border-amber-500/20";
+  return "bg-white/5 text-gray-300 border-white/10";
+}
+function availabilityClass(value) {
+  if (value === "downloadable") return "text-emerald-300";
+  if (value === "included") return "text-blue-300";
+  return "text-gray-500";
+}
+function matchesFormat(file, formatKey) {
+  const normalized = formatKey.toLowerCase();
+  const key = file.key.toLowerCase();
+  const name = file.fileName.toLowerCase();
+  const format = file.format.toLowerCase();
+  if (key === normalized || format === normalized) return true;
+  if (normalized === "captions_json") return name.includes("captions") && name.endsWith(".json");
+  if (normalized === "captions_txt") return name.includes("captions") && name.endsWith(".txt");
+  if (normalized === "source_txt") return name.includes("source") && name.endsWith(".txt");
+  if (normalized === "pptx") return name.endsWith(".pptx");
+  if (normalized === "pdf") return name.endsWith(".pdf");
+  if (normalized === "png") return name.includes("png");
+  if (normalized === "zip") return name.endsWith(".zip");
+  return name.includes(normalized);
+}
+function normalizeRequestError(err, fallback) {
+  const message = err?.response?.data?.message || err?.message || "";
+  if (/ECONNREFUSED|ENOTFOUND|EHOSTUNREACH|Network Error|connect\s+ECONNREFUSED/i.test(message)) {
+    return fallback;
+  }
+  return message || fallback;
 }
 function ExportScreen() {
-  const { setScreen, campaign, backendUrl } = useAppStore();
-  const view = selectCampaignViewModel(campaign);
-  const [selected, setSelected] = reactExports.useState(["pptx", "pdf", "png", "zip"]);
+  const { setScreen, campaign, backendUrl, updateCampaign } = useAppStore();
+  const [backendCampaign, setBackendCampaign] = reactExports.useState(null);
+  const [exportInfo, setExportInfo] = reactExports.useState(null);
+  const [errorMessage, setErrorMessage] = reactExports.useState("");
   const [exporting, setExporting] = reactExports.useState(false);
-  const [exportDone, setExportDone] = reactExports.useState(false);
-  const [exportId, setExportId] = reactExports.useState("");
-  const toggle = (key) => {
-    setSelected((prev) => prev.includes(key) ? prev.filter((k2) => k2 !== key) : [...prev, key]);
+  const [refreshing, setRefreshing] = reactExports.useState(false);
+  const api = reactExports.useMemo(() => createApiClient(backendUrl), [backendUrl]);
+  const exportView = reactExports.useMemo(
+    () => selectCampaignExportViewModel(campaign, backendCampaign, exportInfo, errorMessage),
+    [backendCampaign, campaign, errorMessage, exportInfo]
+  );
+  const selectedFormats = campaign.advancedSettings.exportFormats || [];
+  const loadExportState = async () => {
+    if (!campaign.campaignId) return;
+    setRefreshing(true);
+    setErrorMessage("");
+    try {
+      const data = await api.getCampaign(campaign.campaignId);
+      setBackendCampaign(data);
+      updateCampaign({
+        status: data.summary.status,
+        deckResults: data.generatedMedia.deck || campaign.deckResults,
+        socialResults: data.generatedMedia.socialPack || campaign.socialResults,
+        captionResults: data.generatedMedia.captions || campaign.captionResults,
+        exportResults: data.generatedMedia.exports?.[0] || campaign.exportResults
+      });
+      if (data.exportJobId) {
+        const info = await api.getExportDownloadInfo(campaign.campaignId, data.exportJobId);
+        setExportInfo(info);
+      } else {
+        setExportInfo(null);
+      }
+    } catch (err) {
+      setErrorMessage(normalizeRequestError(err, "Backend disconnected"));
+    } finally {
+      setRefreshing(false);
+    }
+  };
+  reactExports.useEffect(() => {
+    void loadExportState();
+  }, [campaign.campaignId, backendUrl]);
+  const toggleFormat = (key) => {
+    const next = selectedFormats.includes(key) ? selectedFormats.filter((format) => format !== key) : [...selectedFormats, key];
+    updateCampaign({
+      advancedSettings: {
+        ...campaign.advancedSettings,
+        exportFormats: next
+      }
+    });
   };
   const handleExport = async () => {
     if (!campaign.campaignId) return;
     setExporting(true);
+    setErrorMessage("");
     try {
-      const api = createApiClient(backendUrl);
-      const result = await api.exportCampaign(campaign.campaignId, selected);
-      setExportId(result.exportJobId);
-      setExportDone(true);
+      const result = await api.exportCampaign(campaign.campaignId, selectedFormats);
+      const data = await api.getCampaign(campaign.campaignId);
+      setBackendCampaign(data);
+      const info = await api.getExportDownloadInfo(campaign.campaignId, result.exportJobId);
+      setExportInfo(info);
+      setBackendCampaign(data);
+      updateCampaign({
+        exportResults: data.generatedMedia.exports?.[0] || campaign.exportResults
+      });
     } catch (err) {
-      console.warn("Export failed:", err?.message);
+      setErrorMessage(normalizeRequestError(err, "Export failed"));
     } finally {
       setExporting(false);
     }
   };
-  const slideCount = view.summary.counts.slides;
-  const assetCount = view.summary.counts.socialAssets;
-  const captionCount = view.summary.counts.captions;
-  const assetIds = view.generatedMedia.socialPack?.assets?.map((asset) => asset.id) || [];
-  return /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "max-w-3xl mx-auto space-y-6", children: [
-    /* @__PURE__ */ jsxRuntimeExports.jsx("h2", { className: "text-2xl font-bold", children: "Export Center" }),
-    /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "bg-white/3 border border-white/5 rounded-xl p-4 space-y-3", children: [
-      /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-xs text-gray-500 uppercase tracking-wider", children: "Package Contents" }),
-      /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "grid grid-cols-2 gap-3 text-sm", children: [
-        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-center gap-2", children: [
-          /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "w-2 h-2 rounded-full bg-purple-500" }),
-          /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { className: "text-gray-300", children: [
-            "Deck: ",
-            slideCount > 0 ? `${slideCount} slides` : "None"
-          ] }),
-          slideCount > 0 && /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "text-[10px] text-gray-600", children: "(PPTX + PDF + PNG)" })
-        ] }),
-        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-center gap-2", children: [
-          /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "w-2 h-2 rounded-full bg-amber-500" }),
-          /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { className: "text-gray-300", children: [
-            "Social: ",
-            assetCount > 0 ? `${assetCount} images` : "None"
-          ] }),
-          assetCount > 0 && /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { className: "text-[10px] text-gray-600", children: [
-            "(",
-            assetIds.length,
-            " files)"
-          ] })
-        ] }),
-        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-center gap-2", children: [
-          /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "w-2 h-2 rounded-full bg-green-500" }),
-          /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { className: "text-gray-300", children: [
-            "Captions: ",
-            captionCount > 0 ? `${captionCount} captions` : "None"
-          ] }),
-          captionCount > 0 && /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "text-[10px] text-gray-600", children: "(JSON + TXT + MD)" })
-        ] }),
-        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-center gap-2", children: [
-          /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "w-2 h-2 rounded-full bg-blue-500" }),
-          /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { className: "text-gray-300", children: [
-            "Source text: ",
-            campaign.sourceText ? "Included" : "None"
-          ] })
-        ] })
-      ] }),
-      /* @__PURE__ */ jsxRuntimeExports.jsxs("p", { className: "text-[11px] text-gray-600", children: [
-        "Formats: ",
-        selected.map((s) => s.toUpperCase()).join(", ")
-      ] })
-    ] }),
-    /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "space-y-3", children: [
-      /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-xs text-gray-500 uppercase tracking-wider", children: "Export Formats" }),
-      formats.map((fmt) => /* @__PURE__ */ jsxRuntimeExports.jsxs("label", { className: `flex items-center gap-4 p-4 rounded-xl border cursor-pointer transition-all ${selected.includes(fmt.key) ? "border-purple-500/40 bg-purple-500/5" : "border-white/10 bg-white/5 hover:bg-white/8"}`, children: [
-        /* @__PURE__ */ jsxRuntimeExports.jsx("input", { type: "checkbox", checked: selected.includes(fmt.key), onChange: () => toggle(fmt.key), className: "w-4 h-4 accent-purple-500" }),
-        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { children: [
-          /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-sm font-semibold text-gray-200", children: fmt.label }),
-          /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-xs text-gray-400", children: fmt.desc })
-        ] })
-      ] }, fmt.key))
-    ] }),
-    exportDone && /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "bg-green-500/5 border border-green-500/20 rounded-xl p-5 space-y-4", children: [
-      /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-center gap-3", children: [
-        /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "w-10 h-10 rounded-full bg-green-500/20 flex items-center justify-center text-green-400 text-lg", children: "✓" }),
-        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { children: [
-          /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-sm font-semibold text-green-300", children: "Export Complete" }),
-          /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-xs text-green-400/80", children: (/* @__PURE__ */ new Date()).toLocaleString() })
-        ] })
-      ] }),
-      /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "grid grid-cols-3 gap-3 text-xs", children: [
-        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "bg-black/20 rounded-lg p-3", children: [
-          /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-gray-500", children: "ZIP filename" }),
-          /* @__PURE__ */ jsxRuntimeExports.jsxs("p", { className: "text-gray-200 font-mono", children: [
-            view.summary.title?.replace(/\s+/g, "-").toLowerCase() || "campaign",
-            "-export.zip"
-          ] })
-        ] }),
-        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "bg-black/20 rounded-lg p-3", children: [
-          /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-gray-500", children: "Files" }),
-          /* @__PURE__ */ jsxRuntimeExports.jsxs("p", { className: "text-gray-200", children: [
-            slideCount + assetCount + captionCount + 5,
-            " items"
-          ] })
-        ] }),
-        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "bg-black/20 rounded-lg p-3", children: [
-          /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-gray-500", children: "Saved to" }),
-          /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-gray-200 font-mono text-[11px]", children: "uploads/exports/" })
+  const openExportFolder = () => {
+    if (!exportView.downloadDir) return;
+    const apiBridge = window.electronAPI;
+    if (apiBridge?.openPath) {
+      apiBridge.openPath(exportView.downloadDir).then((result) => {
+        if (result) {
+          setErrorMessage(`Open Folder failed: ${result}`);
+        }
+      }).catch(() => {
+        setErrorMessage("Open Folder failed.");
+      });
+    }
+  };
+  const openExportZip = () => {
+    if (!exportView.zipFilePath) return;
+    const apiBridge = window.electronAPI;
+    if (apiBridge?.openPath) {
+      apiBridge.openPath(exportView.zipFilePath).then((result) => {
+        if (result) {
+          setErrorMessage(`Open ZIP failed: ${result}`);
+        }
+      }).catch(() => {
+        setErrorMessage("Open ZIP failed.");
+      });
+    }
+  };
+  const copyExportPath = async () => {
+    const pathToCopy = exportView.zipFilePath || exportView.downloadDir;
+    if (!pathToCopy) return;
+    const apiBridge = window.electronAPI;
+    if (apiBridge?.copyText) {
+      await apiBridge.copyText(pathToCopy);
+    }
+  };
+  const manifestState = exportView.manifestAvailable ? "Available" : "Not available";
+  return /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "max-w-5xl mx-auto space-y-6", children: [
+    /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-start justify-between gap-4 flex-wrap", children: [
+      /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "space-y-2", children: [
+        /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-xs uppercase tracking-[0.25em] text-gray-500", children: "Export Center" }),
+        /* @__PURE__ */ jsxRuntimeExports.jsx("h2", { className: "text-2xl font-bold", children: exportView.title || "Untitled Campaign" }),
+        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex flex-wrap items-center gap-2 text-sm text-gray-400", children: [
+          /* @__PURE__ */ jsxRuntimeExports.jsx("span", { children: exportView.selectedPackageLabel }),
+          /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "text-gray-700", children: "•" }),
+          /* @__PURE__ */ jsxRuntimeExports.jsx("span", { children: exportView.visualStyleLabel }),
+          /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "text-gray-700", children: "•" }),
+          /* @__PURE__ */ jsxRuntimeExports.jsx("span", { children: exportView.exportReadinessLabel })
         ] })
       ] }),
       /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex flex-wrap gap-2", children: [
         /* @__PURE__ */ jsxRuntimeExports.jsx(
           "button",
           {
-            onClick: () => {
-              const api = window.electronAPI;
-              if (api?.openPath) api.openPath("/Users/admin/CascadeProjects/clever-church/services/clever-slides-backend/uploads/exports");
-            },
-            className: "px-4 py-2 bg-purple-500 hover:bg-purple-400 text-white rounded-lg text-sm font-semibold transition-all",
-            children: "Open Export Folder"
+            onClick: () => setScreen("review"),
+            className: "px-4 py-2 rounded-lg border border-white/10 bg-white/5 text-sm text-gray-300 hover:bg-white/10",
+            children: "Back to Review"
           }
         ),
         /* @__PURE__ */ jsxRuntimeExports.jsx(
           "button",
           {
-            onClick: () => {
-              navigator.clipboard.writeText("/Users/admin/CascadeProjects/clever-church/services/clever-slides-backend/uploads/exports").catch(() => {
-              });
-            },
-            className: "px-3 py-2 bg-white/10 hover:bg-white/15 text-gray-300 rounded-lg text-xs transition-all",
-            children: "Copy Path"
+            onClick: loadExportState,
+            className: "px-4 py-2 rounded-lg border border-white/10 bg-white/5 text-sm text-gray-300 hover:bg-white/10",
+            children: refreshing ? "Refreshing..." : "Refresh Export Status"
           }
         ),
         /* @__PURE__ */ jsxRuntimeExports.jsx(
           "button",
           {
-            onClick: () => setExportDone(false),
-            className: "px-3 py-2 bg-white/5 hover:bg-white/10 text-gray-400 rounded-lg text-xs transition-all border border-white/10",
-            children: "Export Again"
+            onClick: handleExport,
+            disabled: exporting,
+            className: "px-4 py-2 rounded-lg border border-purple-500/30 bg-purple-500/10 text-sm text-purple-200 hover:bg-purple-500/20 disabled:opacity-50",
+            children: exporting ? "Exporting..." : exportView.exportStatus === "ready" ? "Export Again" : errorMessage ? "Retry Export" : "Export Package"
           }
         )
-      ] }),
-      /* @__PURE__ */ jsxRuntimeExports.jsxs("details", { className: "text-xs", children: [
-        /* @__PURE__ */ jsxRuntimeExports.jsxs("summary", { className: "text-gray-500 cursor-pointer hover:text-gray-300", children: [
-          "View file list (",
-          slideCount + assetCount + captionCount + 5,
-          " files)"
-        ] }),
-        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "bg-black/20 rounded-lg p-4 space-y-2 mt-2", children: [
-          slideCount > 0 && /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "space-y-0.5", children: [
-            /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-[10px] text-purple-400 uppercase tracking-wider", children: "Slides" }),
-            /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "pl-3 space-y-0.5", children: [
-              /* @__PURE__ */ jsxRuntimeExports.jsx(FileRow, { name: "presentation.pptx", desc: "PowerPoint" }),
-              /* @__PURE__ */ jsxRuntimeExports.jsx(FileRow, { name: "presentation.pdf", desc: "PDF" }),
-              Array.from({ length: Math.min(slideCount, 6) }, (_, i) => /* @__PURE__ */ jsxRuntimeExports.jsx(FileRow, { name: `slide-${String(i + 1).padStart(2, "0")}.png`, desc: "Slide image" }, i))
-            ] })
-          ] }),
-          assetCount > 0 && /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "space-y-0.5", children: [
-            /* @__PURE__ */ jsxRuntimeExports.jsxs("p", { className: "text-[10px] text-amber-400 uppercase tracking-wider", children: [
-              "Social (",
-              assetCount,
-              ")"
-            ] }),
-            /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "pl-3 space-y-0.5", children: Array.from({ length: Math.min(assetCount, 6) }, (_, i) => /* @__PURE__ */ jsxRuntimeExports.jsx(FileRow, { name: `social-${String(i + 1).padStart(2, "0")}.jpg`, desc: "Social image" }, i)) })
-          ] }),
-          /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "space-y-0.5", children: [
-            /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-[10px] text-green-400 uppercase tracking-wider", children: "Captions" }),
-            /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "pl-3 space-y-0.5", children: [
-              /* @__PURE__ */ jsxRuntimeExports.jsx(FileRow, { name: "captions.json", desc: "Data" }),
-              /* @__PURE__ */ jsxRuntimeExports.jsx(FileRow, { name: "captions.txt", desc: "Text" })
-            ] })
-          ] }),
-          /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "space-y-0.5", children: [
-            /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-[10px] text-blue-400 uppercase tracking-wider", children: "Metadata" }),
-            /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "pl-3 space-y-0.5", children: [
-              /* @__PURE__ */ jsxRuntimeExports.jsx(FileRow, { name: "campaign.json", desc: "Campaign data" }),
-              /* @__PURE__ */ jsxRuntimeExports.jsx(FileRow, { name: "source.txt", desc: "Original text" })
-            ] })
-          ] })
-        ] })
       ] })
     ] }),
-    /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex gap-3", children: [
-      /* @__PURE__ */ jsxRuntimeExports.jsx("button", { onClick: () => setScreen("review"), className: "px-4 py-2 bg-white/5 hover:bg-white/10 rounded-lg text-sm border border-white/10", children: "Back" }),
-      /* @__PURE__ */ jsxRuntimeExports.jsx(
-        "button",
-        {
-          onClick: handleExport,
-          disabled: exporting || selected.length === 0,
-          className: "px-6 py-2 bg-purple-500 hover:bg-purple-400 disabled:bg-gray-700 disabled:text-gray-500 text-white rounded-lg text-sm font-semibold transition-all",
-          children: exporting ? "Exporting..." : exportDone ? "Export Again" : "Export Package"
-        }
-      )
+    errorMessage ? /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "rounded-xl border border-red-500/20 bg-red-500/5 p-4 text-sm text-red-200", children: errorMessage }) : null,
+    /* @__PURE__ */ jsxRuntimeExports.jsxs("section", { className: "grid gap-4 lg:grid-cols-[1.1fr_0.9fr]", children: [
+      /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "rounded-2xl border border-white/10 bg-white/5 p-5 space-y-4", children: [
+        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-center justify-between gap-3 flex-wrap", children: [
+          /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { children: [
+            /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-xs uppercase tracking-[0.25em] text-gray-500", children: "Package Contents" }),
+            /* @__PURE__ */ jsxRuntimeExports.jsx("h3", { className: "text-lg font-semibold text-gray-100 mt-1", children: "Real export state" })
+          ] }),
+          /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: `text-[10px] px-2 py-0.5 rounded border ${statusClass(exportView.exportStatus)}`, children: exportView.exportStatusLabel })
+        ] }),
+        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "grid gap-3 md:grid-cols-2", children: [
+          /* @__PURE__ */ jsxRuntimeExports.jsx(InfoCard$1, { label: "Deck", value: `${exportView.slideCount} slides` }),
+          /* @__PURE__ */ jsxRuntimeExports.jsx(InfoCard$1, { label: "Social", value: `${exportView.socialAssetCount} images` }),
+          /* @__PURE__ */ jsxRuntimeExports.jsx(InfoCard$1, { label: "Captions", value: `${exportView.captionCount} captions` }),
+          /* @__PURE__ */ jsxRuntimeExports.jsx(InfoCard$1, { label: "Source text", value: exportView.sourceIncluded ? "Included" : "Not included" }),
+          /* @__PURE__ */ jsxRuntimeExports.jsx(InfoCard$1, { label: "Manifest", value: manifestState }),
+          /* @__PURE__ */ jsxRuntimeExports.jsx(InfoCard$1, { label: "Generated files", value: String(exportView.totalGeneratedFiles) })
+        ] }),
+        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "rounded-xl border border-white/10 bg-black/20 p-4 space-y-2", children: [
+          /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-center justify-between", children: [
+            /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "text-sm text-gray-300", children: "Export job" }),
+            /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "font-mono text-xs text-gray-400", children: exportView.downloadId || "Not generated yet" })
+          ] }),
+          /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-center justify-between", children: [
+            /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "text-sm text-gray-300", children: "Last generated" }),
+            /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "text-sm text-gray-100", children: exportView.lastGeneratedAt ? new Date(exportView.lastGeneratedAt).toLocaleString() : "Unavailable" })
+          ] }),
+          /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-center justify-between", children: [
+            /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "text-sm text-gray-300", children: "Export path" }),
+            /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "font-mono text-[11px] text-gray-400 break-all text-right", children: exportView.downloadDir || "Not exported yet" })
+          ] }),
+          /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-center justify-between", children: [
+            /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "text-sm text-gray-300", children: "ZIP file" }),
+            /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "font-mono text-[11px] text-gray-400 break-all text-right", children: exportView.zipFilePath || "Not generated yet" })
+          ] })
+        ] }),
+        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex flex-wrap gap-2", children: [
+          exportView.downloadDir ? /* @__PURE__ */ jsxRuntimeExports.jsx(
+            "button",
+            {
+              onClick: openExportFolder,
+              className: "px-4 py-2 rounded-lg border border-purple-500/30 bg-purple-500/10 text-sm text-purple-200 hover:bg-purple-500/20",
+              children: "Open Folder"
+            }
+          ) : null,
+          exportView.zipFilePath ? /* @__PURE__ */ jsxRuntimeExports.jsx(
+            "button",
+            {
+              onClick: openExportZip,
+              className: "px-4 py-2 rounded-lg border border-white/10 bg-white/5 text-sm text-gray-300 hover:bg-white/10",
+              children: "Open ZIP"
+            }
+          ) : null,
+          exportView.zipFilePath || exportView.downloadDir ? /* @__PURE__ */ jsxRuntimeExports.jsx(
+            "button",
+            {
+              onClick: copyExportPath,
+              className: "px-4 py-2 rounded-lg border border-white/10 bg-white/5 text-sm text-gray-300 hover:bg-white/10",
+              children: "Copy Path"
+            }
+          ) : null
+        ] })
+      ] }),
+      /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "rounded-2xl border border-white/10 bg-white/5 p-5 space-y-4", children: [
+        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { children: [
+          /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-xs uppercase tracking-[0.25em] text-gray-500", children: "Formats" }),
+          /* @__PURE__ */ jsxRuntimeExports.jsx("h3", { className: "text-lg font-semibold text-gray-100 mt-1", children: "Selected formats" })
+        ] }),
+        /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "space-y-2", children: exportFormats.map((format) => {
+          const selected = selectedFormats.includes(format.key);
+          const file = exportView.availableExportFiles.find((item) => matchesFormat(item, format.key));
+          return /* @__PURE__ */ jsxRuntimeExports.jsxs(
+            "label",
+            {
+              className: `flex items-start gap-3 p-3 rounded-xl border cursor-pointer transition-colors ${selected ? "border-purple-500/30 bg-purple-500/5" : "border-white/10 bg-black/20 hover:bg-white/5"}`,
+              children: [
+                /* @__PURE__ */ jsxRuntimeExports.jsx(
+                  "input",
+                  {
+                    type: "checkbox",
+                    checked: selected,
+                    onChange: () => toggleFormat(format.key),
+                    className: "mt-1 h-4 w-4 accent-purple-500"
+                  }
+                ),
+                /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex-1 space-y-1", children: [
+                  /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-center justify-between gap-2", children: [
+                    /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-sm font-semibold text-gray-100", children: format.label }),
+                    /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: `text-[10px] px-2 py-0.5 rounded-full border ${selected ? "border-emerald-500/20 bg-emerald-500/10 text-emerald-200" : "border-white/10 bg-white/5 text-gray-400"}`, children: selected ? "Selected" : "Not selected" })
+                  ] }),
+                  /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-xs text-gray-400", children: format.desc }),
+                  /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: `text-xs ${availabilityClass(file?.availability || "unavailable")}`, children: file ? `${file.fileName} · ${file.note}` : exportView.exportReadinessLabel })
+                ] })
+              ]
+            },
+            format.key
+          );
+        }) })
+      ] })
+    ] }),
+    /* @__PURE__ */ jsxRuntimeExports.jsxs("section", { className: "rounded-2xl border border-white/10 bg-white/5 p-5 space-y-4", children: [
+      /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "flex items-center justify-between gap-3 flex-wrap", children: /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { children: [
+        /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-xs uppercase tracking-[0.25em] text-gray-500", children: "Available files" }),
+        /* @__PURE__ */ jsxRuntimeExports.jsx("h3", { className: "text-lg font-semibold text-gray-100 mt-1", children: "What the backend actually created" })
+      ] }) }),
+      /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "grid gap-3 md:grid-cols-2 xl:grid-cols-3", children: exportView.availableExportFiles.map((file) => /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "rounded-xl border border-white/10 bg-black/20 p-4 space-y-2", children: [
+        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-start justify-between gap-2", children: [
+          /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { children: [
+            /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-sm font-semibold text-gray-100", children: file.label }),
+            /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-[11px] text-gray-500", children: labelOutput(file.key) })
+          ] }),
+          /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: `text-[10px] px-2 py-0.5 rounded-full border ${file.availability === "downloadable" ? "border-emerald-500/20 bg-emerald-500/10 text-emerald-200" : file.availability === "included" ? "border-blue-500/20 bg-blue-500/10 text-blue-200" : "border-white/10 bg-white/5 text-gray-400"}`, children: file.availability === "downloadable" ? "Downloadable" : file.availability === "included" ? "Included in ZIP" : "Unavailable" })
+        ] }),
+        /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "font-mono text-[11px] text-gray-400 break-all", children: file.fileName }),
+        /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-xs text-gray-500 break-words", children: file.note }),
+        /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-[11px] text-gray-600 break-all", children: file.path })
+      ] }, file.key)) })
     ] })
   ] });
 }
+function InfoCard$1({ label, value }) {
+  return /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "rounded-xl border border-white/10 bg-black/20 p-4", children: [
+    /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-[10px] uppercase tracking-[0.25em] text-gray-500", children: label }),
+    /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "mt-1 text-sm text-gray-100", children: value })
+  ] });
+}
+const version = "1.0.0";
+const appPackage = {
+  version
+};
 function SettingsScreen() {
   const { backendUrl, setBackendUrl, appSettings, updateAppSettings, clearCampaignHistory, campaigns, setScreen } = useAppStore();
   const [testing, setTesting] = reactExports.useState(false);
   const [connStatus, setConnStatus] = reactExports.useState("idle");
+  const [health, setHealth] = reactExports.useState(null);
+  reactExports.useEffect(() => {
+    const api = createApiClient(backendUrl);
+    api.getHealth().then((data) => {
+      setHealth(data);
+      setConnStatus("connected");
+    }).catch(() => {
+      setHealth(null);
+      setConnStatus("failed");
+    });
+  }, [backendUrl]);
   const testConnection = async () => {
     setTesting(true);
     try {
       const api = createApiClient(backendUrl);
-      await api.getJobStatus("0");
+      const data = await api.getHealth();
+      setHealth(data);
       setConnStatus("connected");
     } catch {
       setConnStatus("failed");
@@ -13728,21 +14170,16 @@ function SettingsScreen() {
         /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: `w-2 h-2 rounded-full ${connStatus === "connected" ? "bg-green-400" : connStatus === "failed" ? "bg-red-400" : "bg-gray-600"}` }),
         connStatus === "connected" ? "Connected" : connStatus === "failed" ? "Connection failed" : "Not tested"
       ] }) }),
-      /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-center gap-3 text-xs pt-1", children: [
-        /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "text-gray-500", children: "Providers:" }),
-        /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { className: "flex items-center gap-1.5 text-green-400", children: [
-          /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "w-1.5 h-1.5 rounded-full bg-green-400" }),
-          " FAL.AI"
-        ] }),
-        /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { className: "flex items-center gap-1.5 text-gray-600", children: [
-          /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "w-1.5 h-1.5 rounded-full bg-gray-600" }),
-          " OpenAI"
-        ] }),
-        /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { className: "flex items-center gap-1.5 text-green-400", children: [
-          /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "w-1.5 h-1.5 rounded-full bg-green-400" }),
-          " Local"
-        ] })
-      ] })
+      /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "grid gap-2 text-xs pt-1 md:grid-cols-2", children: [
+        /* @__PURE__ */ jsxRuntimeExports.jsx(StatusRow, { label: "App version", value: health?.version || appPackage.version }),
+        /* @__PURE__ */ jsxRuntimeExports.jsx(StatusRow, { label: "Store mode", value: health?.storeMode || "unknown" }),
+        /* @__PURE__ */ jsxRuntimeExports.jsx(StatusRow, { label: "Database", value: health?.database?.connected ? `connected · ${health.database.name}` : health?.database?.configured ? "configured · disconnected" : "not configured" }),
+        /* @__PURE__ */ jsxRuntimeExports.jsx(StatusRow, { label: "Queue", value: health?.queue?.connected ? `connected · ${health.queue.name}` : health?.queue?.configured ? "configured · disconnected" : "not configured" }),
+        /* @__PURE__ */ jsxRuntimeExports.jsx(StatusRow, { label: "FAL", value: health ? health.providers?.fal ? "configured" : "missing" : "unknown" }),
+        /* @__PURE__ */ jsxRuntimeExports.jsx(StatusRow, { label: "OpenAI", value: health ? health.providers?.openai ? "configured" : "missing" : "unknown" }),
+        /* @__PURE__ */ jsxRuntimeExports.jsx(StatusRow, { label: "Local fallback", value: health?.providers?.local ? "available" : "unknown" })
+      ] }),
+      health?.storeMode === "memory" ? /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-[11px] text-amber-300/80", children: "Memory mode is for development only. Campaign history will not survive backend restart." }) : null
     ] }),
     /* @__PURE__ */ jsxRuntimeExports.jsxs("section", { className: "space-y-3", children: [
       /* @__PURE__ */ jsxRuntimeExports.jsx("h3", { className: "text-sm font-semibold text-gray-300 uppercase tracking-wider", children: "Church Profile" }),
@@ -13809,6 +14246,12 @@ function SettingsScreen() {
         children: "Back to Home"
       }
     )
+  ] });
+}
+function StatusRow({ label, value }) {
+  return /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "rounded-lg border border-white/10 bg-white/5 px-3 py-2 flex items-center justify-between gap-3", children: [
+    /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "text-gray-500", children: label }),
+    /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "text-gray-200 text-right", children: value })
   ] });
 }
 const STATUS_LABELS = {
@@ -13897,13 +14340,12 @@ const navItems = [
 ];
 function Sidebar() {
   const { workspaceTab, setWorkspaceTab, campaign } = useAppStore();
-  const deckResults = campaign.deckResults;
-  const socialResults = campaign.socialResults;
-  const captionResults = campaign.captionResults;
+  const view = selectCampaignViewModel(campaign);
   const badges = {
-    slides: deckResults?.slideCount || null,
-    social: socialResults?.assetCount || socialResults?.assetIds?.length || null,
-    captions: captionResults?.length || null
+    slides: view.summary.counts.slides || null,
+    social: view.summary.counts.socialAssets || null,
+    captions: view.summary.counts.captions || null,
+    exports: view.summary.counts.exports || null
   };
   return /* @__PURE__ */ jsxRuntimeExports.jsx("nav", { className: "w-48 flex-shrink-0 space-y-0.5 p-2", children: navItems.map((item) => /* @__PURE__ */ jsxRuntimeExports.jsx(
     SidebarItem,
@@ -14240,9 +14682,12 @@ function Toggle({ checked, onChange }) {
 }
 function WarningsPanel() {
   const { campaign } = useAppStore();
-  const analysis = campaign.analysis;
-  const warnings = analysis?.warnings || [];
-  const qualityWarnings = campaign.deckResults?.quality?.warnings || [];
+  const view = selectCampaignViewModel(campaign);
+  const warnings = view.summary.warnings || [];
+  const qualityWarnings = [
+    ...(view.generatedMedia.deck?.slides || []).flatMap((slide) => slide.quality?.warnings || []),
+    ...(view.generatedMedia.socialPack?.assets || []).flatMap((asset) => asset.quality?.warnings || [])
+  ];
   const allWarnings = [
     ...warnings.map((w2) => ({ cat: "Analysis", msg: w2 })),
     ...qualityWarnings.map((w2) => ({ cat: "Quality", msg: w2 }))
@@ -14293,7 +14738,8 @@ function WorkspaceLayout() {
 }
 function CaptionsPanel() {
   const { campaign } = useAppStore();
-  const captionResults = campaign.captionResults || [];
+  const view = selectCampaignViewModel(campaign);
+  const captionResults = view.generatedMedia.captions || [];
   return /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "space-y-4", children: [
     /* @__PURE__ */ jsxRuntimeExports.jsx("h3", { className: "text-lg font-semibold", children: "Captions" }),
     captionResults.length === 0 ? /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-sm text-gray-500", children: "No captions generated yet." }) : /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "space-y-3", children: captionResults.map((caption, i) => /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "bg-white/5 border border-white/10 rounded-lg p-4 space-y-2", children: [
@@ -14304,12 +14750,13 @@ function CaptionsPanel() {
         ] }),
         /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "text-[10px] px-2 py-0.5 rounded bg-purple-500/10 text-purple-300", children: caption.cta || "No CTA" })
       ] }),
-      /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-sm text-gray-300 whitespace-pre-wrap", children: caption.longCaption || caption.caption || caption.captionPreview }),
+      /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-sm text-gray-300 whitespace-pre-wrap", children: caption.caption }),
       caption.hashtags?.length > 0 && /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "flex flex-wrap gap-1", children: caption.hashtags.map((tag) => /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "text-[10px] text-purple-400 bg-purple-500/10 px-1.5 py-0.5 rounded", children: tag }, tag)) }),
       /* @__PURE__ */ jsxRuntimeExports.jsx(
         "button",
         {
-          onClick: () => navigator.clipboard.writeText(caption.longCaption || caption.caption || caption.captionPreview || ""),
+          onClick: () => navigator.clipboard.writeText(caption.caption || "").catch(() => {
+          }),
           className: "text-[10px] text-gray-500 hover:text-gray-300 transition-colors",
           children: "Copy caption"
         }

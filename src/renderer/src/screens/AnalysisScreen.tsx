@@ -86,10 +86,75 @@ export default function AnalysisScreen() {
   if (error) {
     return (
       <div className="max-w-3xl mx-auto space-y-6">
-        <div className="bg-red-500/10 border border-red-500/20 rounded-xl p-6 text-center">
-          <p className="text-red-300">{error}</p>
+        <div className="bg-red-500/10 border border-red-500/20 rounded-xl p-6 space-y-4">
+          <div>
+            <p className="text-sm font-semibold text-red-200">Analysis failed</p>
+            <p className="text-sm text-red-300 mt-1">{error}</p>
+          </div>
+          <div className="rounded-lg border border-red-500/20 bg-black/20 p-3 text-xs text-gray-400 space-y-1">
+            <p>Backend: <span className="font-mono text-gray-200 break-all">{backendUrl}</span></p>
+            <p>Source text is preserved in the import form and campaign state.</p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <button
+              onClick={() => {
+                setError(null);
+                setLoading(true);
+                void (async () => {
+                  try {
+                    const api = createApiClient(backendUrl);
+                    const data = await api.analyzeDocument(campaign.sourceText, campaign.language);
+                    setResult(data);
+                    setSelectedType(data.detectedType);
+                    setSelectedGoal(data.campaignGoal);
+                    const cleanTitle = stripLabelPrefix(data.title || '');
+                    const cleanMessage = stripLabelPrefix(data.mainMessage || '');
+                    const cleanPassage = stripLabelPrefix(data.passageOrTopic || '');
+                    const cleanTone = stripLabelPrefix(data.tone || '');
+                    const cleanCTA = stripLabelPrefix(data.cta || '');
+                    const cleanAudience = stripLabelPrefix(data.audienceNeed || '');
+                    updateCampaign({
+                      campaignType: data.detectedType,
+                      campaignGoal: data.campaignGoal,
+                      title: cleanTitle,
+                      subtitle: data.subtitle || '',
+                      passageOrTopic: cleanPassage,
+                      mainMessage: cleanMessage,
+                      audienceNeed: cleanAudience || '',
+                      tone: cleanTone || '',
+                      cta: cleanCTA || '',
+                      eventDetails: {
+                        date: data.eventDetails.date || undefined,
+                        time: data.eventDetails.time || undefined,
+                        timezone: data.eventDetails.timezone || undefined,
+                        locationName: data.eventDetails.locationName || undefined,
+                        address: data.eventDetails.address || undefined,
+                        website: data.eventDetails.website || undefined,
+                        phone: data.eventDetails.phone || undefined,
+                        livestreamUrl: data.eventDetails.livestreamUrl || undefined,
+                      },
+                      analysis: data as Record<string, unknown>,
+                      status: 'analyzed',
+                    });
+                  } catch (err: any) {
+                    setError(err?.message || 'Analysis failed');
+                  } finally {
+                    setLoading(false);
+                  }
+                })();
+              }}
+              className="px-4 py-2 bg-purple-500 hover:bg-purple-400 text-white rounded-lg text-sm font-semibold"
+            >
+              Retry Analysis
+            </button>
+            <button onClick={() => setScreen('settings')} className="px-4 py-2 bg-white/10 hover:bg-white/15 text-gray-300 rounded-lg text-sm">
+              Open Settings
+            </button>
+            <button onClick={() => setScreen('import')} className="px-4 py-2 bg-white/5 hover:bg-white/10 text-gray-400 rounded-lg text-sm border border-white/10">
+              Back to Import
+            </button>
+          </div>
         </div>
-        <button onClick={() => setScreen('import')} className="px-4 py-2 bg-white/5 rounded-lg text-sm">Back to Import</button>
       </div>
     );
   }

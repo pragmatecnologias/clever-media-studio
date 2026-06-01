@@ -27,12 +27,67 @@ export interface ExportJob {
   status: string;
 }
 
+export interface ExportManifestFile {
+  name: string;
+  label: string;
+  format: string;
+  path: string;
+  downloadable: boolean;
+}
+
+export interface ExportDownloadInfo {
+  campaignId: string;
+  exportId: string;
+  exportDir?: string;
+  zipFilePath?: string | null;
+  status: string;
+  campaignName?: string;
+  manifest?: {
+    exportId?: string;
+    campaignName?: string;
+    generatedAt?: string;
+    selectedPackage?: string;
+    selectedVisualStyle?: string;
+    counts?: {
+      slides?: number;
+      socialAssets?: number;
+      captions?: number;
+      filesGenerated?: number;
+    };
+    exportFormats?: string[];
+    warnings?: string[];
+    fileList?: ExportManifestFile[];
+    files?: ExportManifestFile[];
+  };
+}
+
 export interface CampaignResponseDto {
   summary: CampaignSummaryDto;
   generatedMedia: CampaignGeneratedMediaDto;
   analysis?: CampaignAnalysisResult;
   mediaPackJobId?: string;
   exportJobId?: string;
+}
+
+export interface BackendHealthDto {
+  status: 'ok' | 'degraded' | 'down';
+  version: string;
+  storeMode: 'memory' | 'database';
+  database: {
+    configured: boolean;
+    connected: boolean;
+    name: string;
+  };
+  queue?: {
+    configured: boolean;
+    connected: boolean;
+    name: string;
+  };
+  providers: {
+    fal: boolean;
+    openai: boolean;
+    local: boolean;
+  };
 }
 
 export function createApiClient(baseUrl: string, token?: string) {
@@ -66,6 +121,7 @@ export function createApiClient(baseUrl: string, token?: string) {
         language: campaign.language,
         passageOrTopic: campaign.passageOrTopic,
         eventDetails: campaign.eventDetails,
+        campaignSettings: campaign.advancedSettings,
         analysis: analysis || undefined,
       });
       return data;
@@ -101,6 +157,11 @@ export function createApiClient(baseUrl: string, token?: string) {
       return data;
     },
 
+    getHealth: async (): Promise<BackendHealthDto> => {
+      const { data } = await client.get('/health');
+      return data;
+    },
+
     exportCampaign: async (campaignId: string, formats: string[]): Promise<ExportJob> => {
       const { data } = await client.post(`/campaigns/${campaignId}/export`, {
         formats,
@@ -110,7 +171,7 @@ export function createApiClient(baseUrl: string, token?: string) {
       return data;
     },
 
-    getExportDownloadInfo: async (campaignId: string, exportId: string): Promise<{ campaignId: string; exportId: string; exportDir?: string; status: string; campaignName?: string }> => {
+    getExportDownloadInfo: async (campaignId: string, exportId: string): Promise<ExportDownloadInfo> => {
       const { data } = await client.get(`/campaigns/${campaignId}/exports/${exportId}/download`);
       return data;
     },

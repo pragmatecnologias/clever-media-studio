@@ -131,9 +131,12 @@ function Toggle({ checked, onChange }: { checked: boolean; onChange: () => void 
 
 function WarningsPanel() {
   const { campaign } = useAppStore();
-  const analysis = campaign.analysis as any;
-  const warnings: string[] = analysis?.warnings || [];
-  const qualityWarnings: string[] = (campaign.deckResults as any)?.quality?.warnings || [];
+  const view = selectCampaignViewModel(campaign);
+  const warnings: string[] = view.summary.warnings || [];
+  const qualityWarnings: string[] = [
+    ...((view.generatedMedia.deck?.slides || []).flatMap((slide) => slide.quality?.warnings || [])),
+    ...((view.generatedMedia.socialPack?.assets || []).flatMap((asset) => asset.quality?.warnings || [])),
+  ];
 
   const allWarnings = [
     ...warnings.map((w) => ({ cat: 'Analysis', msg: w })),
@@ -195,7 +198,8 @@ export default function WorkspaceLayout() {
 
 function CaptionsPanel() {
   const { campaign } = useAppStore();
-  const captionResults = (campaign.captionResults || []) as any[];
+  const view = selectCampaignViewModel(campaign);
+  const captionResults = view.generatedMedia.captions || [];
 
   return (
     <div className="space-y-4">
@@ -210,7 +214,7 @@ function CaptionsPanel() {
                 <span className="text-xs text-gray-500">Caption {i + 1}</span>
                 <span className="text-[10px] px-2 py-0.5 rounded bg-purple-500/10 text-purple-300">{caption.cta || 'No CTA'}</span>
               </div>
-              <p className="text-sm text-gray-300 whitespace-pre-wrap">{caption.longCaption || caption.caption || caption.captionPreview}</p>
+              <p className="text-sm text-gray-300 whitespace-pre-wrap">{caption.caption}</p>
               {caption.hashtags?.length > 0 && (
                 <div className="flex flex-wrap gap-1">
                   {caption.hashtags.map((tag: string) => (
@@ -218,7 +222,7 @@ function CaptionsPanel() {
                   ))}
                 </div>
               )}
-              <button onClick={() => navigator.clipboard.writeText(caption.longCaption || caption.caption || caption.captionPreview || '')}
+              <button onClick={() => navigator.clipboard.writeText(caption.caption || '').catch(() => {})}
                 className="text-[10px] text-gray-500 hover:text-gray-300 transition-colors">
                 Copy caption
               </button>

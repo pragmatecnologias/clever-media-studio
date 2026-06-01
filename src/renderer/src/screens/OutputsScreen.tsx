@@ -22,7 +22,7 @@ export default function OutputsScreen() {
         campaign,
         campaign.analysis as any,
       );
-      updateCampaign({ campaignId: createResult.campaignId });
+      updateCampaign({ campaignId: createResult.campaignId, generationError: null });
       const genResult = await api.generateMediaPack(createResult.campaignId, {
         outputs: {
           presentationDeck: { enabled: outputs.presentationDeck },
@@ -31,10 +31,12 @@ export default function OutputsScreen() {
         },
         visualStyle: 'auto',
       });
-      updateCampaign({ generationJobId: genResult.jobId });
+      updateCampaign({ generationJobId: genResult.jobId, generationError: null });
       setScreen('generating');
     } catch (err: any) {
-      console.warn('Generation failed:', err?.message);
+      const message = err?.response?.data?.message || err?.message || 'Generation failed';
+      updateCampaign({ generationError: message, status: 'failed' });
+      setScreen('generating');
     } finally {
       setGenerating(false);
     }

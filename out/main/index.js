@@ -76,3 +76,7 @@ electron.ipcMain.handle("file:save", async (_event, { name, content }) => {
 electron.ipcMain.handle("shell:openPath", async (_event, dirPath) => {
   return electron.shell.openPath(dirPath);
 });
+electron.ipcMain.handle("clipboard:copyText", async (_event, text) => {
+  electron.clipboard.writeText(text || "");
+  return true;
+});

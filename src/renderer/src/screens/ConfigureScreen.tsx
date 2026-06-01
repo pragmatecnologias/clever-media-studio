@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useAppStore } from '../lib/store';
+import { useAppStore, type CampaignState } from '../lib/store';
 import { createApiClient } from '../lib/api';
 import { PRESETS } from '../lib/presets';
 import { CAMPAIGN_TYPE_LABELS, CAMPAIGN_GOAL_LABELS, TYPE_OPTIONS, GOAL_OPTIONS } from '../lib/labels';
@@ -13,6 +13,39 @@ const VISUAL_STYLES = [
   { key: 'spanish_church_warm', label: 'Iglesia', desc: 'Warm, bilingual', emoji: '🙌' },
 ];
 
+const INVITATION_GOALS = new Set(['invite_attendance', 'announce_event', 'promote_livestream']);
+
+function countEnabledOutputs(outputSelections: { presentationDeck: boolean; socialPack: boolean; captionPack: boolean; thumbnail: boolean }) {
+  return Object.values(outputSelections).filter(Boolean).length;
+}
+
+function resolveBestPreset(campaign: CampaignState) {
+  const enabledPresets = PRESETS.filter((preset) => countEnabledOutputs(preset.outputSelections) > 0);
+
+  const exactTypeGoal = enabledPresets.find(
+    (preset) => preset.campaignType === campaign.campaignType && preset.campaignGoal === campaign.campaignGoal,
+  );
+  if (exactTypeGoal) return exactTypeGoal;
+
+  if (campaign.campaignType === 'sermon' && INVITATION_GOALS.has(campaign.campaignGoal)) {
+    return enabledPresets.find((preset) => preset.id === 'sermon-invitation')
+      || enabledPresets.find((preset) => preset.campaignType === 'sermon');
+  }
+
+  const exactType = enabledPresets.find((preset) => preset.campaignType === campaign.campaignType);
+  if (exactType) return exactType;
+
+  const exactGoal = enabledPresets.find((preset) => preset.campaignGoal === campaign.campaignGoal);
+  if (exactGoal) return exactGoal;
+
+  const recommendedMatch = enabledPresets.find(
+    (preset) => preset.recommendedFor.includes(campaign.campaignType) || preset.recommendedFor.includes('*'),
+  );
+  if (recommendedMatch) return recommendedMatch;
+
+  return enabledPresets[0];
+}
+
 export default function ConfigureScreen() {
   const { setScreen, campaign, updateCampaign, backendUrl } = useAppStore();
   const [generating, setGenerating] = useState(false);
@@ -22,9 +55,8 @@ export default function ConfigureScreen() {
   // Auto-select best preset based on campaign type if none selected yet
   useEffect(() => {
     if (!campaign.presetId && campaign.campaignType) {
-      const bestPreset = PRESETS.find(p => p.campaignType === campaign.campaignType)
-        || PRESETS.find(p => p.recommendedFor?.includes(campaign.campaignType));
-      if (bestPreset) {
+      const bestPreset = resolveBestPreset(campaign);
+      if (bestPreset && countEnabledOutputs(bestPreset.outputSelections) > 0) {
         updateCampaign({
           presetId: bestPreset.id,
           campaignType: bestPreset.campaignType,
@@ -34,7 +66,11 @@ export default function ConfigureScreen() {
         });
       }
     }
-  }, [campaign.campaignType, campaign.presetId]);
+  }, [campaign.campaignGoal, campaign.campaignType, campaign.presetId, campaign.advancedSettings, updateCampaign]);
+
+  useEffect(() => {
+    setVisualStyle(campaign.advancedSettings.visualStyle || 'auto');
+  }, [campaign.advancedSettings.visualStyle]);
 
   const toggle = (key: keyof typeof outputs) => {
     updateCampaign({ outputSelections: { ...outputs, [key]: !outputs[key] } });
@@ -45,7 +81,7 @@ export default function ConfigureScreen() {
     try {
       const api = createApiClient(backendUrl);
       const createResult = await api.createCampaign(campaign, campaign.analysis as any);
-      updateCampaign({ campaignId: createResult.campaignId });
+      updateCampaign({ campaignId: createResult.campaignId, generationError: null });
       const adv = campaign.advancedSettings;
       const genResult = await api.generateMediaPack(createResult.campaignId, {
         outputs: {
@@ -71,10 +107,12 @@ export default function ConfigureScreen() {
         includeSource: adv.includeSource,
         includeMetadata: adv.includeMetadata,
       });
-      updateCampaign({ generationJobId: genResult.jobId, status: 'generating' });
+      updateCampaign({ generationJobId: genResult.jobId, generationError: null, status: 'generating' });
       setScreen('generating');
     } catch (err: any) {
-      console.warn('Generation failed:', err?.message);
+      const message = err?.response?.data?.message || err?.message || 'Generation failed';
+      updateCampaign({ generationError: message, status: 'failed' });
+      setScreen('generating');
     } finally {
       setGenerating(false);
     }
@@ -82,6 +120,7 @@ export default function ConfigureScreen() {
 
   const pickedPreset = campaign.presetId;
   const activeOutputs = [outputs.presentationDeck, outputs.socialPack, outputs.captionPack, outputs.thumbnail].filter(Boolean).length;
+  const isGenerateDisabled = generating || activeOutputs === 0;
 
   return (
     <div className="max-w-3xl mx-auto space-y-8">
@@ -92,7 +131,7 @@ export default function ConfigureScreen() {
             {campaign.title ? campaign.title : 'Review and finalize your campaign'}
           </p>
         </div>
-        <button onClick={handleGenerate} disabled={generating || activeOutputs === 0}
+        <button onClick={handleGenerate} disabled={isGenerateDisabled} data-testid="configure-generate-top"
           className="px-8 py-3 bg-purple-500 hover:bg-purple-400 disabled:opacity-40 disabled:cursor-not-allowed text-white font-semibold rounded-xl text-base transition-all shadow-lg shadow-purple-500/20">
           {generating ? 'Generating...' : 'Generate Media Pack'}
         </button>
@@ -121,7 +160,7 @@ export default function ConfigureScreen() {
       <Section title="Visual Style" number={2}>
         <div className="grid grid-cols-3 gap-2">
           {VISUAL_STYLES.map(s => (
-            <button key={s.key} onClick={() => setVisualStyle(s.key)}
+            <button key={s.key} data-testid={`configure-visual-style-${s.key}`} onClick={() => setVisualStyle(s.key)}
               className={`text-left p-3 rounded-lg border transition-all ${
                 visualStyle === s.key ? 'border-purple-500/40 bg-purple-500/10' : 'border-white/10 bg-white/5 hover:bg-white/8'
               }`}>
@@ -137,7 +176,7 @@ export default function ConfigureScreen() {
       <Section title="Choose Package" number={3}>
         <div className="grid grid-cols-3 gap-2">
           {PRESETS.map(p => (
-            <button key={p.id} onClick={() => {
+            <button key={p.id} data-testid={`configure-preset-${p.id}`} onClick={() => {
               updateCampaign({
                 outputSelections: { ...p.outputSelections },
                 presetId: p.id,
@@ -157,16 +196,16 @@ export default function ConfigureScreen() {
         </div>
 
         <div className="flex flex-wrap gap-2 mt-3">
-          <ToggleChip label="Slides" checked={outputs.presentationDeck} onChange={() => toggle('presentationDeck')} />
-          <ToggleChip label="Social Pack" checked={outputs.socialPack} onChange={() => toggle('socialPack')} />
-          <ToggleChip label="Captions" checked={outputs.captionPack} onChange={() => toggle('captionPack')} />
-          <ToggleChip label="Thumbnail" checked={outputs.thumbnail} onChange={() => toggle('thumbnail')} />
+          <ToggleChip dataTestId="configure-toggle-slides" label="Slides" checked={outputs.presentationDeck} onChange={() => toggle('presentationDeck')} />
+          <ToggleChip dataTestId="configure-toggle-social" label="Social Pack" checked={outputs.socialPack} onChange={() => toggle('socialPack')} />
+          <ToggleChip dataTestId="configure-toggle-captions" label="Captions" checked={outputs.captionPack} onChange={() => toggle('captionPack')} />
+          <ToggleChip dataTestId="configure-toggle-thumbnail" label="Thumbnail" checked={outputs.thumbnail} onChange={() => toggle('thumbnail')} />
         </div>
       </Section>
 
       {/* Generate button bottom */}
       <div className="flex justify-center pt-4 pb-8">
-        <button onClick={handleGenerate} disabled={generating || activeOutputs === 0}
+        <button onClick={handleGenerate} disabled={isGenerateDisabled} data-testid="configure-generate-bottom"
           className="px-10 py-4 bg-purple-500 hover:bg-purple-400 disabled:opacity-40 disabled:cursor-not-allowed text-white font-semibold rounded-xl text-lg transition-all shadow-lg shadow-purple-500/20">
           {generating ? 'Generating...' : 'Generate Media Pack'}
         </button>
@@ -197,9 +236,9 @@ function Field({ label, value, onChange }: { label: string; value: string; onCha
   );
 }
 
-function ToggleChip({ label, checked, onChange }: { label: string; checked: boolean; onChange: () => void }) {
+function ToggleChip({ dataTestId, label, checked, onChange }: { dataTestId: string; label: string; checked: boolean; onChange: () => void }) {
   return (
-    <button onClick={onChange}
+    <button onClick={onChange} data-testid={dataTestId}
       className={`text-xs px-3 py-1.5 rounded-lg border transition-all font-medium ${
         checked ? 'bg-purple-500/20 text-purple-200 border-purple-500/40' : 'bg-white/5 text-gray-500 border-white/10 hover:bg-white/8'
       }`}>
