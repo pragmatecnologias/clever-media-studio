@@ -1,8 +1,14 @@
 import React, { useState, useEffect } from 'react';
-import { useAppStore, type CampaignState } from '../lib/store';
+import { useAppStore } from '../lib/store';
 import { createApiClient } from '../lib/api';
 import { PRESETS } from '../lib/presets';
 import { CAMPAIGN_TYPE_LABELS, CAMPAIGN_GOAL_LABELS, TYPE_OPTIONS, GOAL_OPTIONS } from '../lib/labels';
+import {
+  buildGenerateMediaPackRequest,
+  countEnabledOutputs,
+  isInvitationCampaign,
+  resolveBestPreset,
+} from '../lib/configure-flow.mjs';
 
 const VISUAL_STYLES = [
   { key: 'auto', label: 'Auto', desc: 'Best match', emoji: '🎨' },
@@ -13,39 +19,6 @@ const VISUAL_STYLES = [
   { key: 'spanish_church_warm', label: 'Iglesia', desc: 'Warm, bilingual', emoji: '🙌' },
 ];
 
-const INVITATION_GOALS = new Set(['invite_attendance', 'announce_event', 'promote_livestream']);
-
-function countEnabledOutputs(outputSelections: { presentationDeck: boolean; socialPack: boolean; captionPack: boolean; thumbnail: boolean }) {
-  return Object.values(outputSelections).filter(Boolean).length;
-}
-
-function resolveBestPreset(campaign: CampaignState) {
-  const enabledPresets = PRESETS.filter((preset) => countEnabledOutputs(preset.outputSelections) > 0);
-
-  const exactTypeGoal = enabledPresets.find(
-    (preset) => preset.campaignType === campaign.campaignType && preset.campaignGoal === campaign.campaignGoal,
-  );
-  if (exactTypeGoal) return exactTypeGoal;
-
-  if (campaign.campaignType === 'sermon' && INVITATION_GOALS.has(campaign.campaignGoal)) {
-    return enabledPresets.find((preset) => preset.id === 'sermon-invitation')
-      || enabledPresets.find((preset) => preset.campaignType === 'sermon');
-  }
-
-  const exactType = enabledPresets.find((preset) => preset.campaignType === campaign.campaignType);
-  if (exactType) return exactType;
-
-  const exactGoal = enabledPresets.find((preset) => preset.campaignGoal === campaign.campaignGoal);
-  if (exactGoal) return exactGoal;
-
-  const recommendedMatch = enabledPresets.find(
-    (preset) => preset.recommendedFor.includes(campaign.campaignType) || preset.recommendedFor.includes('*'),
-  );
-  if (recommendedMatch) return recommendedMatch;
-
-  return enabledPresets[0];
-}
-
 export default function ConfigureScreen() {
   const { setScreen, campaign, updateCampaign, backendUrl } = useAppStore();
   const [generating, setGenerating] = useState(false);
@@ -55,7 +28,7 @@ export default function ConfigureScreen() {
   // Auto-select best preset based on campaign type if none selected yet
   useEffect(() => {
     if (!campaign.presetId && campaign.campaignType) {
-      const bestPreset = resolveBestPreset(campaign);
+      const bestPreset = resolveBestPreset(campaign, PRESETS);
       if (bestPreset && countEnabledOutputs(bestPreset.outputSelections) > 0) {
         updateCampaign({
           presetId: bestPreset.id,
@@ -82,31 +55,7 @@ export default function ConfigureScreen() {
       const api = createApiClient(backendUrl);
       const createResult = await api.createCampaign(campaign, campaign.analysis as any);
       updateCampaign({ campaignId: createResult.campaignId, generationError: null });
-      const adv = campaign.advancedSettings;
-      const genResult = await api.generateMediaPack(createResult.campaignId, {
-        outputs: {
-          presentationDeck: { enabled: outputs.presentationDeck },
-          socialPack: { enabled: outputs.socialPack },
-          captionPack: { enabled: outputs.captionPack },
-        },
-        visualStyle: adv.visualStyle || visualStyle,
-        socialPackMode: adv.socialPackMode,
-        platforms: adv.platforms,
-        imageProvider: adv.imageProvider,
-        targetSlideCount: adv.targetSlideCount !== 'auto' ? Number(adv.targetSlideCount) : undefined,
-        deckType: adv.deckType !== 'auto' ? adv.deckType : undefined,
-        branding: {
-          mode: adv.brandingMode,
-          showLogo: adv.showLogo,
-          showAddress: adv.showAddress,
-          showWebsite: adv.showWebsite,
-          showPhone: adv.showPhone,
-          showServiceTime: adv.showServiceTime,
-        },
-        exportFormats: adv.exportFormats,
-        includeSource: adv.includeSource,
-        includeMetadata: adv.includeMetadata,
-      });
+      const genResult = await api.generateMediaPack(createResult.campaignId, buildGenerateMediaPackRequest(campaign, visualStyle));
       updateCampaign({ generationJobId: genResult.jobId, generationError: null, status: 'generating' });
       setScreen('generating');
     } catch (err: any) {
@@ -156,8 +105,21 @@ export default function ConfigureScreen() {
         </div>
       </Section>
 
+      {isInvitationCampaign(campaign) ? (
+        <Section title="Invitation Details" number={2}>
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="Date" value={campaign.eventDetails.date || ''} onChange={(v) => updateCampaign({ eventDetails: { ...campaign.eventDetails, date: v } })} />
+            <Field label="Time" value={campaign.eventDetails.time || ''} onChange={(v) => updateCampaign({ eventDetails: { ...campaign.eventDetails, time: v } })} />
+            <Field label="Location" value={campaign.eventDetails.locationName || ''} onChange={(v) => updateCampaign({ eventDetails: { ...campaign.eventDetails, locationName: v } })} />
+            <Field label="Address" value={campaign.eventDetails.address || ''} onChange={(v) => updateCampaign({ eventDetails: { ...campaign.eventDetails, address: v } })} />
+            <Field label="Website" value={campaign.eventDetails.website || ''} onChange={(v) => updateCampaign({ eventDetails: { ...campaign.eventDetails, website: v } })} />
+            <Field label="Phone" value={campaign.eventDetails.phone || ''} onChange={(v) => updateCampaign({ eventDetails: { ...campaign.eventDetails, phone: v } })} />
+          </div>
+        </Section>
+      ) : null}
+
       {/* 2. Visual Style */}
-      <Section title="Visual Style" number={2}>
+      <Section title="Visual Style" number={isInvitationCampaign(campaign) ? 3 : 2}>
         <div className="grid grid-cols-3 gap-2">
           {VISUAL_STYLES.map(s => (
             <button key={s.key} data-testid={`configure-visual-style-${s.key}`} onClick={() => setVisualStyle(s.key)}
@@ -173,7 +135,7 @@ export default function ConfigureScreen() {
       </Section>
 
       {/* 3. Package Presets */}
-      <Section title="Choose Package" number={3}>
+      <Section title="Choose Package" number={isInvitationCampaign(campaign) ? 4 : 3}>
         <div className="grid grid-cols-3 gap-2">
           {PRESETS.map(p => (
             <button key={p.id} data-testid={`configure-preset-${p.id}`} onClick={() => {

@@ -88,6 +88,12 @@ export interface BackendHealthDto {
     openai: boolean;
     local: boolean;
   };
+  image?: {
+    defaultProvider: string;
+    paidProvidersEnabled: boolean;
+    mockMode: boolean;
+    inpaintEnabled: boolean;
+  };
 }
 
 export function createApiClient(baseUrl: string, token?: string) {
@@ -141,6 +147,7 @@ export function createApiClient(baseUrl: string, token?: string) {
         socialPackMode?: string;
         platforms?: string[];
         imageProvider?: string;
+        eventDetails?: Record<string, unknown>;
       },
     ): Promise<{ jobId: string; campaignId: string; status: string }> => {
       const { data } = await client.post(`/campaigns/${campaignId}/generate-media-pack`, options);

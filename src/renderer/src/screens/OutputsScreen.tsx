@@ -3,12 +3,28 @@ import { useAppStore } from '../lib/store';
 import { createApiClient } from '../lib/api';
 import { PRESETS } from '../lib/presets';
 import { humanize } from '../lib/labels';
+import { buildGenerateMediaPackRequest, resolveBestPreset, countEnabledOutputs } from '../lib/configure-flow.mjs';
 
 export default function OutputsScreen() {
   const { setScreen, campaign, updateCampaign, backendUrl } = useAppStore();
   const [generating, setGenerating] = React.useState(false);
 
   const outputs = campaign.outputSelections;
+
+  React.useEffect(() => {
+    if (!campaign.presetId && campaign.campaignType) {
+      const bestPreset = resolveBestPreset(campaign, PRESETS);
+      if (bestPreset && countEnabledOutputs(bestPreset.outputSelections) > 0) {
+        updateCampaign({
+          presetId: bestPreset.id,
+          campaignType: bestPreset.campaignType,
+          campaignGoal: bestPreset.campaignGoal,
+          outputSelections: { ...bestPreset.outputSelections },
+          advancedSettings: { ...campaign.advancedSettings, socialPackMode: bestPreset.socialPackMode as any },
+        });
+      }
+    }
+  }, [campaign, updateCampaign]);
 
   const toggle = (key: keyof typeof outputs) => {
     updateCampaign({ outputSelections: { ...outputs, [key]: !outputs[key] } });
@@ -23,14 +39,7 @@ export default function OutputsScreen() {
         campaign.analysis as any,
       );
       updateCampaign({ campaignId: createResult.campaignId, generationError: null });
-      const genResult = await api.generateMediaPack(createResult.campaignId, {
-        outputs: {
-          presentationDeck: { enabled: outputs.presentationDeck },
-          socialPack: { enabled: outputs.socialPack },
-          captionPack: { enabled: outputs.captionPack },
-        },
-        visualStyle: 'auto',
-      });
+      const genResult = await api.generateMediaPack(createResult.campaignId, buildGenerateMediaPackRequest(campaign, 'auto'));
       updateCampaign({ generationJobId: genResult.jobId, generationError: null });
       setScreen('generating');
     } catch (err: any) {

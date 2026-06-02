@@ -6,6 +6,8 @@
   "scripts": {
     "dev": "electron-vite dev",
     "build": "electron-vite build",
+    "typecheck": "tsc --noEmit --allowJs --checkJs --module esnext --target es2021 --moduleResolution bundler src/renderer/src/lib/configure-flow.mjs",
+    "test": "node scripts/configure-flow-regression.mjs",
     "preview": "electron-vite preview",
     "package": "electron-builder"
   },

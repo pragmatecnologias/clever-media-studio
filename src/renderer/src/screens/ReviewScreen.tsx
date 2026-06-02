@@ -4,6 +4,7 @@ import { createApiClient, type CampaignResponseDto, type ExportDownloadInfo } fr
 import { PRESETS } from '../lib/presets';
 import { selectCampaignViewModel } from '../lib/campaign-view-model';
 import { selectCampaignExportViewModel } from '../lib/export-view-model';
+import { ExportActionBar, ExportSummaryPanel } from '../components/export/ExportPanels';
 import {
   humanize,
   labelCampaignGoal,
@@ -11,7 +12,6 @@ import {
   labelCampaignType,
   labelLanguage,
   labelLayoutFamily,
-  labelOutput,
   labelSocialAssetRole,
   labelSocialPlatform,
 } from '../lib/labels';
@@ -710,27 +710,7 @@ export default function ReviewScreen() {
 
       {activeTab === 'exports' && (
         <section className="grid gap-4 lg:grid-cols-[1.1fr_0.9fr]">
-          <div className="rounded-2xl border border-white/10 bg-white/5 p-5 space-y-4">
-            <TabHeader
-              title="Exports"
-              subtitle="Package the normalized outputs with manifest and sanitized filenames."
-              actions={(
-                <ActionButton onClick={exportPackage} busy={busyKey === 'export'} label={exportView.exportStatus === 'ready' ? 'Export Again' : screenError ? 'Retry Export' : 'Export package'} />
-              )}
-            />
-            <div className="grid gap-3 md:grid-cols-2">
-              <MetricCard label="Slides" value={String(exportView.slideCount)} />
-              <MetricCard label="Social assets" value={String(exportView.socialAssetCount)} />
-              <MetricCard label="Captions" value={String(exportView.captionCount)} />
-              <MetricCard label="Formats" value={(exportView.selectedExportFormats || []).map((format) => labelOutput(format)).join(', ')} />
-            </div>
-            <div className="rounded-xl border border-white/10 bg-black/20 p-4 space-y-2">
-              <p className="text-sm text-gray-300">Selected formats are exported with the current edited captions and normalized counts.</p>
-              <p className="text-xs text-gray-500">Manifest: {exportView.manifestAvailable ? 'Available' : 'Not available'}</p>
-              <p className="text-xs text-gray-500">Files are sanitized to avoid invalid filenames on disk.</p>
-            </div>
-          </div>
-
+          <ExportSummaryPanel exportView={exportView} />
           <div className="rounded-2xl border border-white/10 bg-white/5 p-5 space-y-4">
             <div>
               <p className="text-xs uppercase tracking-[0.25em] text-gray-500">Latest export</p>
@@ -742,65 +722,47 @@ export default function ReviewScreen() {
               <InfoRow label="Path" value={exportView.downloadDir || 'Not generated yet'} monospace />
               <InfoRow label="ZIP file" value={exportView.zipFilePath || 'Not generated yet'} monospace />
             </div>
-            <div className="flex flex-wrap gap-2">
-              {exportView.downloadDir ? (
-                <button
-                  onClick={() => {
-                    const api = (window as any).electronAPI;
-                    if (api?.openPath) {
-                      api.openPath(exportView.downloadDir).then((result: string) => {
-                        if (result) {
-                          setScreenError(`Open Folder failed: ${result}`);
-                        }
-                      }).catch(() => {
-                        setScreenError('Open Folder failed.');
-                      });
+            <ExportActionBar
+              exportView={exportView}
+              onExport={exportPackage}
+              onOpenFolder={() => {
+                const api = (window as any).electronAPI;
+                if (api?.openPath && exportView.downloadDir) {
+                  api.openPath(exportView.downloadDir).then((result: string) => {
+                    if (result) {
+                      setScreenError(`Open Folder failed: ${result}`);
                     }
-                  }}
-                  className="px-4 py-2 rounded-lg border border-purple-500/30 bg-purple-500/10 text-sm text-purple-200 hover:bg-purple-500/20"
-                >
-                  Open Folder
-                </button>
-              ) : null}
-              {exportView.zipFilePath ? (
-                <button
-                  onClick={() => {
-                    const api = (window as any).electronAPI;
-                    if (api?.openPath) {
-                      api.openPath(exportView.zipFilePath).then((result: string) => {
-                        if (result) {
-                          setScreenError(`Open ZIP failed: ${result}`);
-                        }
-                      }).catch(() => {
-                        setScreenError('Open ZIP failed.');
-                      });
+                  }).catch(() => {
+                    setScreenError('Open Folder failed.');
+                  });
+                }
+              }}
+              onOpenZip={() => {
+                const api = (window as any).electronAPI;
+                if (api?.openPath && exportView.zipFilePath) {
+                  api.openPath(exportView.zipFilePath).then((result: string) => {
+                    if (result) {
+                      setScreenError(`Open ZIP failed: ${result}`);
                     }
-                  }}
-                  className="px-4 py-2 rounded-lg border border-white/10 bg-white/5 text-sm text-gray-300 hover:bg-white/10"
-                >
-                  Open ZIP
-                </button>
-              ) : null}
-              {exportView.zipFilePath || exportView.downloadDir ? (
-                <button
-                  onClick={() => {
-                    const api = (window as any).electronAPI;
-                    if (api?.copyText) {
-                      api.copyText(exportView.zipFilePath || exportView.downloadDir || '');
-                    }
-                  }}
-                  className="px-4 py-2 rounded-lg border border-white/10 bg-white/5 text-sm text-gray-300 hover:bg-white/10"
-                >
-                  Copy Path
-                </button>
-              ) : null}
-              <button
-                onClick={() => setScreen('export')}
-                className="px-4 py-2 rounded-lg border border-white/10 bg-white/5 text-sm text-gray-300 hover:bg-white/10"
-              >
-                Open export screen
-              </button>
-            </div>
+                  }).catch(() => {
+                    setScreenError('Open ZIP failed.');
+                  });
+                }
+              }}
+              onCopyPath={() => {
+                const api = (window as any).electronAPI;
+                if (api?.copyText) {
+                  api.copyText(exportView.zipFilePath || exportView.downloadDir || '');
+                }
+              }}
+              exportButtonLabel={exportView.exportStatus === 'ready' ? 'Export Again' : screenError ? 'Retry Export' : 'Export package'}
+            />
+            <button
+              onClick={() => setScreen('export')}
+              className="px-4 py-2 rounded-lg border border-white/10 bg-white/5 text-sm text-gray-300 hover:bg-white/10"
+            >
+              Open export screen
+            </button>
           </div>
         </section>
       )}

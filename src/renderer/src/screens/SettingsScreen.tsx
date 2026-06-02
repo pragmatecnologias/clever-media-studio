@@ -13,6 +13,7 @@ export default function SettingsScreen() {
     database?: { configured: boolean; connected: boolean; name: string };
     queue?: { configured: boolean; connected: boolean; name: string };
     providers?: { fal: boolean; openai: boolean; local: boolean };
+    image?: { defaultProvider: string; paidProvidersEnabled: boolean; mockMode: boolean; inpaintEnabled: boolean };
   } | null>(null);
 
   useEffect(() => {
@@ -70,6 +71,8 @@ export default function SettingsScreen() {
           <StatusRow label="Store mode" value={health?.storeMode || 'unknown'} />
           <StatusRow label="Database" value={health?.database?.connected ? `connected · ${health.database.name}` : health?.database?.configured ? 'configured · disconnected' : 'not configured'} />
           <StatusRow label="Queue" value={health?.queue?.connected ? `connected · ${health.queue.name}` : health?.queue?.configured ? 'configured · disconnected' : 'not configured'} />
+          <StatusRow label="Image provider" value={health?.image ? `${health.image.defaultProvider}${health.image.mockMode ? ' · mock' : ''}` : 'unknown'} />
+          <StatusRow label="Paid providers" value={health?.image ? (health.image.paidProvidersEnabled ? 'enabled' : 'disabled') : 'unknown'} />
           <StatusRow label="FAL" value={health ? (health.providers?.fal ? 'configured' : 'missing') : 'unknown'} />
           <StatusRow label="OpenAI" value={health ? (health.providers?.openai ? 'configured' : 'missing') : 'unknown'} />
           <StatusRow label="Local fallback" value={health?.providers?.local ? 'available' : 'unknown'} />
