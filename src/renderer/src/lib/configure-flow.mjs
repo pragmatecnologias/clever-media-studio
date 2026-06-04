@@ -101,6 +101,7 @@ export function buildGenerateMediaPackRequest(campaign, visualStyleOverride) {
     exportFormats: advanced.exportFormats,
     includeSource: advanced.includeSource,
     includeMetadata: advanced.includeMetadata,
+    advancedSettings: advanced,
     eventDetails: isObject(campaign?.eventDetails) ? campaign.eventDetails : {},
   };
 }

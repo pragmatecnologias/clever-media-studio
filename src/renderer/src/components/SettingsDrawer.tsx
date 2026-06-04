@@ -5,11 +5,30 @@ import { TYPE_OPTIONS, GOAL_OPTIONS, SOCIAL_MODE_LABELS } from '../lib/labels';
 export default function SettingsDrawer() {
   const { drawerOpen, toggleDrawer, campaign, updateCampaign } = useAppStore();
   const adv = campaign.advancedSettings;
+  const churchKit = adv.churchKit || {};
 
   if (!drawerOpen) return null;
 
   const update = (partial: Partial<typeof adv>) => {
     updateCampaign({ advancedSettings: { ...adv, ...partial } });
+  };
+
+  const updateChurchKit = (partial: Record<string, unknown>) => {
+    update({
+      churchKit: {
+        ...churchKit,
+        ...partial,
+      } as any,
+    });
+  };
+
+  const handleLogoUpload = async (file: File | null) => {
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      updateChurchKit({ logoPath: String(reader.result || '') });
+    };
+    reader.readAsDataURL(file);
   };
 
   return (
@@ -35,6 +54,49 @@ export default function SettingsDrawer() {
               options={GOAL_OPTIONS.map(o => ({ value: o.value, label: o.label }))} />
             <InputField label="Tone" value={campaign.tone} onChange={(v) => updateCampaign({ tone: v })} />
             <InputField label="CTA" value={campaign.cta} onChange={(v) => updateCampaign({ cta: v })} />
+          </Section>
+
+          {/* Church Kit */}
+          <Section title="Church Kit">
+            <InputField label="Church Name" value={churchKit.churchName || ''} onChange={(v) => updateChurchKit({ churchName: v })} />
+            <InputField label="Short Name" value={churchKit.shortName || ''} onChange={(v) => updateChurchKit({ shortName: v })} />
+            <InputField label="Address" value={churchKit.address || ''} onChange={(v) => updateChurchKit({ address: v })} />
+            <InputField label="Website" value={churchKit.website || ''} onChange={(v) => updateChurchKit({ website: v })} />
+            <InputField label="Phone" value={churchKit.phone || ''} onChange={(v) => updateChurchKit({ phone: v })} />
+            <InputField label="Livestream URL" value={churchKit.livestreamUrl || ''} onChange={(v) => updateChurchKit({ livestreamUrl: v })} />
+            <InputField label="Default Service Time" value={churchKit.defaultServiceTime || ''} onChange={(v) => updateChurchKit({ defaultServiceTime: v })} />
+            <InputField label="Default CTA" value={churchKit.defaultCTA || ''} onChange={(v) => updateChurchKit({ defaultCTA: v })} />
+            <InputField label="Typography Preset" value={churchKit.typographyPreset || ''} onChange={(v) => updateChurchKit({ typographyPreset: v })} placeholder="modern_pastoral" />
+            <InputField label="Logo Data URL or Path" value={churchKit.logoPath || ''} onChange={(v) => updateChurchKit({ logoPath: v })} />
+            <label className="block text-[10px] text-gray-500">
+              Logo file
+              <input
+                type="file"
+                accept="image/*"
+                onChange={(e) => void handleLogoUpload(e.target.files?.[0] || null)}
+                className="mt-1 block w-full text-[10px] text-gray-400 file:mr-3 file:rounded-lg file:border-0 file:bg-white/10 file:px-3 file:py-2 file:text-xs file:text-gray-200 hover:file:bg-white/15"
+              />
+            </label>
+            <div className="grid grid-cols-3 gap-1.5">
+              <InputField label="Primary" value={churchKit.brandColors?.primary || ''} onChange={(v) => updateChurchKit({ brandColors: { ...(churchKit.brandColors || {}), primary: v } })} />
+              <InputField label="Secondary" value={churchKit.brandColors?.secondary || ''} onChange={(v) => updateChurchKit({ brandColors: { ...(churchKit.brandColors || {}), secondary: v } })} />
+              <InputField label="Accent" value={churchKit.brandColors?.accent || ''} onChange={(v) => updateChurchKit({ brandColors: { ...(churchKit.brandColors || {}), accent: v } })} />
+            </div>
+            <SelectField label="Logo Display" value={churchKit.logoDisplayPreference || 'show'}
+              onChange={(v) => updateChurchKit({ logoDisplayPreference: v })}
+              options={[
+                { value: 'show', label: 'Show' },
+                { value: 'footer_only', label: 'Footer only' },
+                { value: 'hide', label: 'Hide' },
+              ]} />
+            <SelectField label="Contact Display" value={churchKit.contactDisplayPreference || 'minimal'}
+              onChange={(v) => updateChurchKit({ contactDisplayPreference: v })}
+              options={[
+                { value: 'minimal', label: 'Minimal' },
+                { value: 'show_address', label: 'Address' },
+                { value: 'show_website', label: 'Website' },
+                { value: 'show_phone', label: 'Phone' },
+              ]} />
           </Section>
 
           {/* Deck */}

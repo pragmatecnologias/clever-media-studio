@@ -7,6 +7,7 @@ import type {
   DeckDto,
   SocialPackDto,
 } from '../../../../../../shared/campaign-normalized.contract';
+import type { CampaignDesignVariant, LayoutTemplateDto } from './types';
 
 export interface GenerationJob {
   id: string;
@@ -65,6 +66,8 @@ export interface CampaignResponseDto {
   summary: CampaignSummaryDto;
   generatedMedia: CampaignGeneratedMediaDto;
   analysis?: CampaignAnalysisResult;
+  campaignSettings?: Record<string, unknown>;
+  brandProfile?: Record<string, unknown>;
   mediaPackJobId?: string;
   exportJobId?: string;
 }
@@ -146,16 +149,28 @@ export function createApiClient(baseUrl: string, token?: string) {
         branding?: Record<string, unknown>;
         socialPackMode?: string;
         platforms?: string[];
-        imageProvider?: string;
-        eventDetails?: Record<string, unknown>;
-      },
-    ): Promise<{ jobId: string; campaignId: string; status: string }> => {
+      imageProvider?: string;
+      eventDetails?: Record<string, unknown>;
+      advancedSettings?: Record<string, unknown>;
+    },
+  ): Promise<{ jobId: string; campaignId: string; status: string }> => {
       const { data } = await client.post(`/campaigns/${campaignId}/generate-media-pack`, options);
       return data;
     },
 
     getCampaign: async (campaignId: string): Promise<CampaignResponseDto> => {
       const { data } = await client.get(`/campaigns/${campaignId}`);
+      return data;
+    },
+
+    listCampaigns: async (): Promise<Array<{
+      campaignId: string; title: string; status: string;
+      campaignType: string; campaignGoal: string; language: string;
+      updatedAt: string; createdAt: string;
+      hasDeck: boolean; hasSocial: boolean; hasExport: boolean;
+      exportJobId: string | null; qualityScore: number | null;
+    }>> => {
+      const { data } = await client.get('/campaigns');
       return data;
     },
 
@@ -190,6 +205,24 @@ export function createApiClient(baseUrl: string, token?: string) {
 
     getCampaignSocialAssets: async (campaignId: string): Promise<SocialPackDto> => {
       const { data } = await client.get(`/campaigns/${campaignId}/social-assets`);
+      return data;
+    },
+
+    getLayoutTemplates: async (): Promise<{ templates: LayoutTemplateDto[] }> => {
+      const { data } = await client.get('/campaigns/layout-templates');
+      return data;
+    },
+
+    createDesignVariants: async (
+      campaignId: string,
+      body: {
+        targetType?: 'slide' | 'social' | 'deck' | 'social_pack' | 'campaign';
+        targetId?: string;
+        selectedVariantId?: string;
+        count?: number;
+      },
+    ): Promise<{ campaignId: string; selectedVariantId: string | null; variants: CampaignDesignVariant[] }> => {
+      const { data } = await client.post(`/campaigns/${campaignId}/design-variants`, body);
       return data;
     },
 

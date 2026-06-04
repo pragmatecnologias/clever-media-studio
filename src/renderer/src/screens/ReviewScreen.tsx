@@ -86,6 +86,24 @@ function normalizeRequestError(err: any, fallback: string): string {
   return message || fallback;
 }
 
+async function loadExportDownloadInfoWithRetry(
+  api: ReturnType<typeof createApiClient>,
+  campaignId: string,
+  exportId: string,
+  attempts = 8,
+): Promise<ExportDownloadInfo | null> {
+  let lastInfo: ExportDownloadInfo | null = null;
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    const info = await api.getExportDownloadInfo(campaignId, exportId);
+    lastInfo = info;
+    if (info?.zipFilePath || info?.exportDir || info?.status === 'ready') {
+      return info;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 750));
+  }
+  return lastInfo;
+}
+
 export default function ReviewScreen() {
   const { campaign, backendUrl, setScreen, updateCampaign } = useAppStore();
   const api = useMemo(() => createApiClient(backendUrl), [backendUrl]);
@@ -108,6 +126,21 @@ export default function ReviewScreen() {
   const captions = view.generatedMedia.captions || [];
   const summary = view.summary;
   const exportJobId = exportView.downloadId;
+  const designVariants = useMemo(() => {
+    const fromLocal = Array.isArray((campaign.advancedSettings as any)?.designVariants)
+      ? (campaign.advancedSettings as any).designVariants
+      : [];
+    const fromBackend = Array.isArray((backendCampaign?.campaignSettings as any)?.designVariants)
+      ? (backendCampaign?.campaignSettings as any).designVariants
+      : [];
+    return fromLocal.length > 0 ? fromLocal : fromBackend;
+  }, [backendCampaign?.campaignSettings, campaign.advancedSettings]);
+  const selectedDesignVariantId = String(
+    (campaign.advancedSettings as any)?.selectedDesignVariantId
+    || (backendCampaign?.campaignSettings as any)?.selectedDesignVariantId
+    || (campaign.advancedSettings as any)?.designVariant?.variantId
+    || '',
+  ).trim();
 
   useEffect(() => {
     let cancelled = false;
@@ -119,17 +152,23 @@ export default function ReviewScreen() {
         const data = await api.getCampaign(campaign.campaignId);
         if (cancelled) return;
         setBackendCampaign(data);
+        const advancedSettings = {
+          ...campaign.advancedSettings,
+          ...((data.campaignSettings as Record<string, unknown>) || {}),
+        } as any;
         updateCampaign({
           status: data.summary.status,
           deckResults: data.generatedMedia.deck || campaign.deckResults,
           socialResults: data.generatedMedia.socialPack || campaign.socialResults,
           captionResults: data.generatedMedia.captions || campaign.captionResults,
           exportResults: data.generatedMedia.exports?.[0] || campaign.exportResults,
+          advancedSettings,
         });
 
-        if (data.exportJobId) {
+        const exportId = data.exportJobId || data.generatedMedia.exports?.[0]?.exportId || null;
+        if (exportId) {
           try {
-            const info = await api.getExportDownloadInfo(campaign.campaignId, data.exportJobId);
+            const info = await loadExportDownloadInfoWithRetry(api, campaign.campaignId, exportId);
             if (!cancelled) setExportInfo(info);
           } catch {
             if (!cancelled) setExportInfo(null);
@@ -169,16 +208,22 @@ export default function ReviewScreen() {
     if (!campaign.campaignId) return;
     const data = await api.getCampaign(campaign.campaignId);
     setBackendCampaign(data);
+    const advancedSettings = {
+      ...campaign.advancedSettings,
+      ...((data.campaignSettings as Record<string, unknown>) || {}),
+    } as any;
     updateCampaign({
       status: data.summary.status,
       deckResults: data.generatedMedia.deck || campaign.deckResults,
       socialResults: data.generatedMedia.socialPack || campaign.socialResults,
       captionResults: data.generatedMedia.captions || campaign.captionResults,
       exportResults: data.generatedMedia.exports?.[0] || campaign.exportResults,
+      advancedSettings,
     });
-    if (data.exportJobId) {
+    const exportId = data.exportJobId || data.generatedMedia.exports?.[0]?.exportId || null;
+    if (exportId) {
       try {
-        const info = await api.getExportDownloadInfo(campaign.campaignId, data.exportJobId);
+        const info = await loadExportDownloadInfoWithRetry(api, campaign.campaignId, exportId);
         setExportInfo(info);
       } catch {
         setExportInfo(null);
@@ -255,6 +300,13 @@ export default function ReviewScreen() {
     });
   };
 
+  const tryAnotherDesign = async (targetType: 'campaign' | 'deck' | 'social_pack' | 'slide' | 'social', targetId?: string) => {
+    if (!campaign.campaignId) return;
+    await runAction(`design:${targetType}:${targetId || 'campaign'}`, async () => {
+      await api.createDesignVariants(campaign.campaignId!, { targetType, targetId, count: 3 });
+    });
+  };
+
   const saveCaption = async (captionId: string) => {
     if (!campaign.campaignId) return;
     const draft = captionDrafts[captionId];
@@ -288,7 +340,7 @@ export default function ReviewScreen() {
     if (!campaign.campaignId) return;
     await runAction('export', async () => {
       const result = await api.exportCampaign(campaign.campaignId!, campaign.advancedSettings.exportFormats || ['pptx', 'pdf', 'png', 'zip']);
-      const info = await api.getExportDownloadInfo(campaign.campaignId!, result.exportJobId);
+      const info = await loadExportDownloadInfoWithRetry(api, campaign.campaignId!, result.exportJobId);
       setExportInfo(info);
       const data = await api.getCampaign(campaign.campaignId!);
       setBackendCampaign(data);
@@ -371,6 +423,13 @@ export default function ReviewScreen() {
           >
             Export Screen
           </button>
+          <button
+            onClick={() => void tryAnotherDesign('campaign')}
+            disabled={!campaign.campaignId}
+            className="px-4 py-2 rounded-lg border border-amber-500/30 bg-amber-500/10 text-sm text-amber-200 hover:bg-amber-500/20 disabled:opacity-50"
+          >
+            Try Another Design
+          </button>
         </div>
       </div>
 
@@ -448,6 +507,101 @@ export default function ReviewScreen() {
         </div>
       )}
 
+      {backendCampaign?.campaignSettings?.imageCostSummary ? (
+        <section className="rounded-2xl border border-white/10 bg-white/5 p-5 space-y-4">
+          <div>
+            <p className="text-xs uppercase tracking-[0.25em] text-gray-500">Image Cost</p>
+            <h3 className="text-lg font-semibold text-gray-100 mt-1">Provider & cost summary</h3>
+          </div>
+          {(() => {
+            const s = backendCampaign.campaignSettings.imageCostSummary as any;
+            return (
+          <div className="grid grid-cols-2 gap-3">
+            <InfoCard label="Image mode" value={s.imageMode || 'local'} />
+            <InfoCard label="Provider" value={String(s.defaultProvider || 'local')} />
+            <InfoCard label="Paid calls" value={String(s.paidGenerationCalls ?? s.totalImageCalls ?? 0)} />
+            <InfoCard label="Fallback calls" value={String(s.fallbackCalls ?? 0)} />
+            <InfoCard label="Inpainting calls" value={String(s.inpaintCalls ?? 0)} />
+            <InfoCard label="Est. cost (USD)" value={`$${Number(s.estimatedCostUsd ?? 0).toFixed(3)}`} />
+            <InfoCard label="Budget exceeded" value={s.budgetExceeded ? 'YES' : 'No'} />
+            {Array.isArray(s.warnings) && s.warnings.length > 0 ? (
+              <div className="col-span-2">
+                <p className="text-xs text-amber-400 mt-2 mb-1">Warnings:</p>
+                {s.warnings.map((w: string, i: number) => (
+                  <p key={i} className="text-[10px] text-amber-400/70">• {w}</p>
+                ))}
+              </div>
+            ) : null}
+          </div>
+            );
+          })()}
+        </section>
+      ) : (
+        <section className="rounded-2xl border border-white/10 bg-white/5 p-5 space-y-4">
+          <div>
+            <p className="text-xs uppercase tracking-[0.25em] text-gray-500">Image Cost</p>
+            <h3 className="text-lg font-semibold text-gray-100 mt-1">Provider & cost summary</h3>
+          </div>
+          <p className="text-sm text-gray-500">No paid image calls. Local image mode used.</p>
+        </section>
+      )}
+
+      {designVariants.length > 0 && (
+        <section className="rounded-2xl border border-white/10 bg-white/5 p-5 space-y-4">
+          <div className="flex items-start justify-between gap-3 flex-wrap">
+            <div>
+              <p className="text-xs uppercase tracking-[0.25em] text-gray-500">Design variants</p>
+              <h3 className="text-lg font-semibold text-gray-100 mt-1">Alternate layouts and styles</h3>
+            </div>
+            <button
+              onClick={() => void tryAnotherDesign('campaign')}
+              disabled={!campaign.campaignId}
+              className="px-3 py-2 rounded-lg border border-amber-500/30 bg-amber-500/10 text-xs text-amber-200 hover:bg-amber-500/20 disabled:opacity-50"
+            >
+              Try Another Design
+            </button>
+          </div>
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+            {designVariants.map((variant: any) => {
+              const selected = selectedDesignVariantId === variant.variantId || Boolean(variant.selected);
+              return (
+                <div
+                  key={variant.variantId}
+                  className={`rounded-xl border p-4 space-y-3 ${
+                    selected ? 'border-purple-500/40 bg-purple-500/10' : 'border-white/10 bg-black/20'
+                  }`}
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <div>
+                      <p className="text-xs uppercase tracking-[0.25em] text-gray-500">{variant.strategy}</p>
+                      <h4 className="text-base font-semibold text-gray-100 mt-1">{variant.label}</h4>
+                    </div>
+                    <span className="text-[10px] px-2 py-0.5 rounded-full border border-white/10 text-gray-300">
+                      {selected ? 'Selected' : 'Variant'}
+                    </span>
+                  </div>
+                  <p className="text-sm text-gray-300">{variant.description}</p>
+                  <div className="grid grid-cols-3 gap-2 text-[11px] text-gray-400">
+                    <span className="rounded-lg bg-white/5 px-2 py-1">Layout: {variant.layoutKey || '—'}</span>
+                    <span className="rounded-lg bg-white/5 px-2 py-1">Font: {variant.typographyPreset || 'auto'}</span>
+                    <span className="rounded-lg bg-white/5 px-2 py-1">Style: {variant.visualStyle || 'auto'}</span>
+                  </div>
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-xs text-gray-500">Score {variant.qualityResult?.score ?? '—'}</span>
+                    <button
+                      onClick={() => void tryAnotherDesign(variant.targetType || 'campaign', variant.targetId)}
+                      className="px-3 py-2 rounded-lg border border-white/10 bg-white/5 text-xs text-gray-300 hover:bg-white/10"
+                    >
+                      Use this design
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </section>
+      )}
+
       {activeTab === 'slides' && (
         <section className="space-y-4">
           <TabHeader
@@ -502,6 +656,13 @@ export default function ReviewScreen() {
                   <button onClick={() => setScreen('slidePreview')} className="px-3 py-2 rounded-lg border border-white/10 bg-white/5 text-xs text-gray-300 hover:bg-white/10">
                     Preview
                   </button>
+                  <button
+                    onClick={() => void tryAnotherDesign('slide', String(slide.index))}
+                    disabled={!campaign.campaignId}
+                    className="px-3 py-2 rounded-lg border border-amber-500/30 bg-amber-500/10 text-xs text-amber-200 hover:bg-amber-500/20 disabled:opacity-50"
+                  >
+                    Try Another Design
+                  </button>
                   <ActionButton onClick={() => regenerateSlide(slide.id)} busy={busyKey === `slide-regenerate:${slide.id}`} label="Regenerate" />
                   <ActionButton onClick={() => approveSlide(slide.id)} busy={busyKey === `slide:${slide.id}`} label="Approve" />
                 </div>
@@ -549,6 +710,13 @@ export default function ReviewScreen() {
                 <div className="flex flex-wrap gap-2">
                   <button onClick={() => setScreen('socialPreview')} className="px-3 py-2 rounded-lg border border-white/10 bg-white/5 text-xs text-gray-300 hover:bg-white/10">
                     Open Preview
+                  </button>
+                  <button
+                    onClick={() => void tryAnotherDesign('social', asset.role || asset.platform)}
+                    disabled={!campaign.campaignId}
+                    className="px-3 py-2 rounded-lg border border-amber-500/30 bg-amber-500/10 text-xs text-amber-200 hover:bg-amber-500/20 disabled:opacity-50"
+                  >
+                    Try Another Design
                   </button>
                   <button
                     onClick={() => asset.caption && navigator.clipboard.writeText(asset.caption).catch(() => {})}

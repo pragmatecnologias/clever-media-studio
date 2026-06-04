@@ -43,14 +43,14 @@ export default function AnalysisScreen() {
           tone: cleanTone || '',
           cta: cleanCTA || '',
           eventDetails: {
-            date: data.eventDetails.date || undefined,
-            time: data.eventDetails.time || undefined,
-            timezone: data.eventDetails.timezone || undefined,
-            locationName: data.eventDetails.locationName || undefined,
-            address: data.eventDetails.address || undefined,
-            website: data.eventDetails.website || undefined,
-            phone: data.eventDetails.phone || undefined,
-            livestreamUrl: data.eventDetails.livestreamUrl || undefined,
+            date: data.eventDetails.date || campaign.eventDetails.date || undefined,
+            time: data.eventDetails.time || campaign.eventDetails.time || undefined,
+            timezone: data.eventDetails.timezone || campaign.eventDetails.timezone || undefined,
+            locationName: data.eventDetails.locationName || campaign.eventDetails.locationName || undefined,
+            address: data.eventDetails.address || campaign.eventDetails.address || undefined,
+            website: data.eventDetails.website || campaign.eventDetails.website || undefined,
+            phone: data.eventDetails.phone || campaign.eventDetails.phone || undefined,
+            livestreamUrl: data.eventDetails.livestreamUrl || campaign.eventDetails.livestreamUrl || undefined,
           },
           analysis: data as Record<string, unknown>,
           status: 'analyzed',
@@ -290,12 +290,23 @@ export default function AnalysisScreen() {
       })()}
 
       {/* Warnings */}
-      {result?.warnings?.length ? (
-        <div className="bg-amber-500/5 border border-amber-500/20 rounded-xl p-4">
-          <p className="text-amber-300 text-sm font-semibold mb-2">Warnings</p>
-          {result.warnings.map((w, i) => <p key={i} className="text-amber-400/70 text-xs">• {w}</p>)}
-        </div>
-      ) : null}
+      {(() => {
+        const ck = campaign.advancedSettings?.churchKit || ({} as any);
+        const resolvedCTA = campaign.cta || (campaign.analysis as any)?.cta || ck.defaultCTA || '';
+        const resolvedMainMessage = campaign.mainMessage || (campaign.analysis as any)?.mainMessage || '';
+        const rawWarnings = result?.warnings || [];
+        const filtered = rawWarnings.filter((w: string) => {
+          if (resolvedCTA && /no cta|cta found|cta not found/i.test(w)) return false;
+          if (resolvedMainMessage && /main message.*not extracted|not extracted.*cleanly/i.test(w)) return false;
+          return true;
+        });
+        return filtered.length > 0 ? (
+          <div className="bg-amber-500/5 border border-amber-500/20 rounded-xl p-4">
+            <p className="text-amber-300 text-sm font-semibold mb-2">Warnings</p>
+            {filtered.map((w: string, i: number) => <p key={i} className="text-amber-400/70 text-xs">• {w}</p>)}
+          </div>
+        ) : null;
+      })()}
 
       <div className="flex gap-3">
         <button onClick={() => setScreen('import')} className="px-4 py-2 bg-white/5 rounded-lg text-sm">Back</button>

@@ -1,12 +1,27 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { useAppStore } from '../lib/store';
 import { createApiClient } from '../lib/api';
 import appPackage from '../../../../package.json';
+
+function StatusRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex items-center justify-between">
+      <span className="text-gray-500">{label}</span>
+      <span className="text-gray-300 text-right">{value || '—'}</span>
+    </div>
+  );
+}
+
+type SaveStatus = 'idle' | 'dirty' | 'saving' | 'saved' | 'error';
 
 export default function SettingsScreen() {
   const { backendUrl, setBackendUrl, appSettings, updateAppSettings, clearCampaignHistory, campaigns, setScreen } = useAppStore();
   const [testing, setTesting] = useState(false);
   const [connStatus, setConnStatus] = useState<'idle' | 'connected' | 'failed'>('idle');
+  const [saveStatus, setSaveStatus] = useState<SaveStatus>('idle');
+  const [saveError, setSaveError] = useState('');
+  const [logoLoadError, setLogoLoadError] = useState(false);
+  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [health, setHealth] = useState<{
     version?: string;
     storeMode?: 'memory' | 'database';
@@ -41,9 +56,95 @@ export default function SettingsScreen() {
     }
   };
 
+  const churchKit = appSettings.churchKit || {};
+  const updateChurchKit = (partial: Record<string, unknown>) => {
+    updateAppSettings({
+      churchKit: {
+        ...churchKit,
+        ...partial,
+      },
+    });
+    setSaveStatus('dirty');
+  };
+
+  const handleSaveSettings = () => {
+    setSaveStatus('saving');
+    setSaveError('');
+    try {
+      updateAppSettings({
+        churchKit: { ...appSettings.churchKit },
+        churchName: appSettings.churchName,
+        churchShortName: appSettings.churchShortName,
+        defaultLanguage: appSettings.defaultLanguage,
+      });
+      setSaveStatus('saved');
+      if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+      saveTimerRef.current = setTimeout(() => {
+        setSaveStatus('idle');
+      }, 3000);
+    } catch (err: any) {
+      setSaveStatus('error');
+      setSaveError(err?.message || 'Save failed');
+    }
+  };
+
+  useEffect(() => {
+    return () => {
+      if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    };
+  }, []);
+
+  const handleLogoUpload = async (file: File | null) => {
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      updateChurchKit({ logoPath: String(reader.result || '') });
+      setLogoLoadError(false);
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleRemoveLogo = () => {
+    updateChurchKit({ logoPath: '', logoAssetId: '' });
+    setLogoLoadError(false);
+  };
+
+  const logoPath = churchKit.logoPath || '';
+  const socialHandles = churchKit.socialHandles || {};
+
+  const updateSocialHandle = (platform: string, value: string) => {
+    updateChurchKit({
+      socialHandles: {
+        ...socialHandles,
+        [platform]: value,
+      },
+    });
+  };
+
   return (
     <div className="max-w-2xl mx-auto mt-8 space-y-8 p-6">
-      <h2 className="text-2xl font-bold">Settings</h2>
+      <div className="flex items-center justify-between">
+        <h2 className="text-2xl font-bold">Settings</h2>
+        <div className="flex items-center gap-3">
+          {saveStatus === 'dirty' ? (
+            <span className="text-xs text-amber-400">Unsaved changes</span>
+          ) : saveStatus === 'saving' ? (
+            <span className="text-xs text-gray-400">Saving...</span>
+          ) : saveStatus === 'saved' ? (
+            <span className="text-xs text-green-400">✓ Saved</span>
+          ) : saveStatus === 'error' ? (
+            <span className="text-xs text-red-400">{saveError || 'Save failed'}</span>
+          ) : null}
+          <button
+            onClick={handleSaveSettings}
+            disabled={saveStatus === 'saving'}
+            data-testid="settings-save-button"
+            className="px-5 py-2 bg-purple-500 hover:bg-purple-400 disabled:opacity-50 disabled:cursor-not-allowed text-white font-semibold rounded-lg text-sm transition-all"
+          >
+            {saveStatus === 'saving' ? 'Saving...' : 'Save Settings'}
+          </button>
+        </div>
+      </div>
 
       {/* Backend */}
       <section className="space-y-3">
@@ -89,16 +190,168 @@ export default function SettingsScreen() {
         <h3 className="text-sm font-semibold text-gray-300 uppercase tracking-wider">Church Profile</h3>
         <input
           value={appSettings.churchName}
-          onChange={(e) => updateAppSettings({ churchName: e.target.value })}
+          onChange={(e) => updateAppSettings({
+            churchName: e.target.value,
+            churchKit: { ...churchKit, churchName: e.target.value },
+          })}
           placeholder="Church name"
           className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-gray-300"
         />
         <input
           value={appSettings.churchShortName}
-          onChange={(e) => updateAppSettings({ churchShortName: e.target.value })}
+          onChange={(e) => updateAppSettings({
+            churchShortName: e.target.value,
+            churchKit: { ...churchKit, shortName: e.target.value },
+          })}
           placeholder="Short name / abbreviation"
           className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-gray-300"
         />
+      </section>
+
+      <section className="space-y-3">
+        <h3 className="text-sm font-semibold text-gray-300 uppercase tracking-wider">Church Kit</h3>
+        <div className="grid gap-3 md:grid-cols-2">
+          <input
+            value={churchKit.address || ''}
+            onChange={(e) => updateChurchKit({ address: e.target.value })}
+            placeholder="Address"
+            className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-gray-300"
+          />
+          <input
+            value={churchKit.website || ''}
+            onChange={(e) => updateChurchKit({ website: e.target.value })}
+            placeholder="Website"
+            className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-gray-300"
+          />
+          <input
+            value={churchKit.phone || ''}
+            onChange={(e) => updateChurchKit({ phone: e.target.value })}
+            placeholder="Phone"
+            className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-gray-300"
+          />
+          <input
+            value={churchKit.livestreamUrl || ''}
+            onChange={(e) => updateChurchKit({ livestreamUrl: e.target.value })}
+            placeholder="Livestream URL"
+            className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-gray-300"
+          />
+          <input
+            value={churchKit.defaultServiceTime || ''}
+            onChange={(e) => updateChurchKit({ defaultServiceTime: e.target.value })}
+            placeholder="Default service time"
+            className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-gray-300"
+          />
+          <input
+            value={churchKit.defaultCTA || ''}
+            onChange={(e) => updateChurchKit({ defaultCTA: e.target.value })}
+            placeholder="Default CTA"
+            className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-gray-300"
+          />
+          <input
+            value={churchKit.typographyPreset || ''}
+            onChange={(e) => updateChurchKit({ typographyPreset: e.target.value })}
+            placeholder="Typography preset"
+            className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-gray-300"
+          />
+        </div>
+
+        {/* Logo section */}
+        <div className="space-y-2">
+          <label className="block text-xs text-gray-500">Logo</label>
+          <div className="flex items-start gap-4">
+            <div className="flex-shrink-0 w-32 h-32 rounded-lg border border-white/10 bg-white/5 flex items-center justify-center overflow-hidden">
+              {logoPath && !logoLoadError ? (
+                <img
+                  src={logoPath}
+                  alt="Church logo"
+                  className="max-w-full max-h-full object-contain"
+                  onError={() => setLogoLoadError(true)}
+                />
+              ) : logoLoadError ? (
+                <span className="text-xs text-red-400 text-center px-2">Logo preview unavailable</span>
+              ) : (
+                <span className="text-xs text-gray-600 text-center px-2">No logo uploaded</span>
+              )}
+            </div>
+            <div className="flex flex-col gap-2 flex-1">
+              <label className="block">
+                <span className="text-[10px] text-gray-500">Upload logo file</span>
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={(e) => void handleLogoUpload(e.target.files?.[0] || null)}
+                  className="mt-1 block w-full text-xs text-gray-400 file:mr-3 file:rounded-lg file:border-0 file:bg-white/10 file:px-3 file:py-2 file:text-xs file:text-gray-200 hover:file:bg-white/15"
+                />
+              </label>
+              <input
+                value={logoPath}
+                onChange={(e) => { updateChurchKit({ logoPath: e.target.value }); setLogoLoadError(false); }}
+                placeholder="Or paste logo data URL / path"
+                className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-xs text-gray-300"
+              />
+              {logoPath ? (
+                <button
+                  onClick={handleRemoveLogo}
+                  className="text-xs text-red-400 hover:text-red-300 self-start"
+                >
+                  Remove logo
+                </button>
+              ) : null}
+            </div>
+          </div>
+        </div>
+
+        <div className="grid gap-3 md:grid-cols-3">
+          <input
+            value={String(churchKit.brandColors?.primary || '')}
+            onChange={(e) => updateChurchKit({ brandColors: { ...(churchKit.brandColors || {}), primary: e.target.value } })}
+            placeholder="Primary color"
+            className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-gray-300"
+          />
+          <input
+            value={String(churchKit.brandColors?.secondary || '')}
+            onChange={(e) => updateChurchKit({ brandColors: { ...(churchKit.brandColors || {}), secondary: e.target.value } })}
+            placeholder="Secondary color"
+            className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-gray-300"
+          />
+          <input
+            value={String(churchKit.brandColors?.accent || '')}
+            onChange={(e) => updateChurchKit({ brandColors: { ...(churchKit.brandColors || {}), accent: e.target.value } })}
+            placeholder="Accent color"
+            className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-gray-300"
+          />
+        </div>
+      </section>
+
+      {/* Social Links */}
+      <section className="space-y-3">
+        <h3 className="text-sm font-semibold text-gray-300 uppercase tracking-wider">Social Links</h3>
+        <div className="grid gap-3 md:grid-cols-2">
+          <input
+            value={socialHandles.instagram || ''}
+            onChange={(e) => updateSocialHandle('instagram', e.target.value)}
+            placeholder="Instagram (@handle or URL)"
+            className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-gray-300"
+          />
+          <input
+            value={socialHandles.facebook || ''}
+            onChange={(e) => updateSocialHandle('facebook', e.target.value)}
+            placeholder="Facebook (URL or page name)"
+            className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-gray-300"
+          />
+          <input
+            value={socialHandles.youtube || ''}
+            onChange={(e) => updateSocialHandle('youtube', e.target.value)}
+            placeholder="YouTube (channel URL)"
+            className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-gray-300"
+          />
+          <input
+            value={socialHandles.x || ''}
+            onChange={(e) => updateSocialHandle('x', e.target.value)}
+            placeholder="X / Twitter (handle or URL)"
+            className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-gray-300"
+          />
+        </div>
       </section>
 
       {/* Language */}
@@ -132,19 +385,20 @@ export default function SettingsScreen() {
         <p className="text-xs text-gray-600">Backend: clever-slides-backend</p>
       </section>
 
-      <button onClick={() => setScreen('welcome')}
-        className="px-4 py-2 bg-white/5 rounded-lg text-sm text-gray-400">
-        Back to Home
-      </button>
-    </div>
-  );
-}
-
-function StatusRow({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="rounded-lg border border-white/10 bg-white/5 px-3 py-2 flex items-center justify-between gap-3">
-      <span className="text-gray-500">{label}</span>
-      <span className="text-gray-200 text-right">{value}</span>
+      <div className="flex justify-between pt-4">
+        <button onClick={() => setScreen('welcome')}
+          className="px-4 py-2 bg-white/5 rounded-lg text-sm text-gray-400">
+          Back to Home
+        </button>
+        <button
+          onClick={handleSaveSettings}
+          disabled={saveStatus === 'saving'}
+          data-testid="settings-save-button-bottom"
+          className="px-5 py-2 bg-purple-500 hover:bg-purple-400 disabled:opacity-50 disabled:cursor-not-allowed text-white font-semibold rounded-lg text-sm transition-all"
+        >
+          {saveStatus === 'saving' ? 'Saving...' : 'Save Settings'}
+        </button>
+      </div>
     </div>
   );
 }

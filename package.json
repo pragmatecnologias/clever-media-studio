@@ -8,6 +8,8 @@
     "build": "electron-vite build",
     "typecheck": "tsc --noEmit --allowJs --checkJs --module esnext --target es2021 --moduleResolution bundler src/renderer/src/lib/configure-flow.mjs",
     "test": "node scripts/configure-flow-regression.mjs",
+    "test:churchkit": "node scripts/churchkit-flow-regression.mjs",
+    "test:all": "node scripts/configure-flow-regression.mjs && node scripts/churchkit-flow-regression.mjs",
     "preview": "electron-vite preview",
     "package": "electron-builder"
   },

@@ -1,5 +1,83 @@
 import type { CampaignState } from './store';
 
+export interface ChurchKit {
+  churchName?: string;
+  shortName?: string;
+  logoPath?: string;
+  logoAssetId?: string;
+  address?: string;
+  website?: string;
+  phone?: string;
+  livestreamUrl?: string;
+  defaultServiceDay?: string;
+  defaultServiceTime?: string;
+  timezone?: string;
+  socialHandles?: {
+    instagram?: string;
+    facebook?: string;
+    youtube?: string;
+    x?: string;
+  };
+  brandColors?: {
+    primary?: string;
+    secondary?: string;
+    accent?: string;
+    background?: string;
+    text?: string;
+  };
+  typographyPreset?: string;
+  language?: 'en' | 'es';
+  defaultCTA?: string;
+  logoDisplayPreference?: 'show' | 'hide' | 'footer_only';
+  contactDisplayPreference?: 'show_address' | 'show_website' | 'show_phone' | 'minimal';
+}
+
+export interface DesignVariantSelection {
+  variantId?: string;
+  targetType?: string;
+  targetId?: string;
+  layoutKey?: string;
+  typographyPreset?: string;
+  visualStyle?: string;
+}
+
+export interface CampaignDesignVariant {
+  variantId: string;
+  campaignId: string;
+  targetType: string;
+  targetId?: string;
+  sourceDesignSpecId?: string;
+  designSpec?: Record<string, unknown>;
+  layoutKey: string;
+  typographyPreset: string;
+  visualStyle: string;
+  qualityResult?: Record<string, unknown>;
+  createdAt: string;
+  selected: boolean;
+  strategy: string;
+  label: string;
+  description: string;
+}
+
+export interface LayoutTemplateDto {
+  layoutKey: string;
+  layoutFamily: string;
+  platform: 'slide' | 'instagram' | 'facebook' | 'whatsapp' | 'youtube' | 'x';
+  format: string;
+  purpose: string;
+  label: string;
+  description: string;
+  textZone: 'left' | 'right' | 'center' | 'top' | 'bottom';
+  focalPoint: 'left' | 'right' | 'center' | 'top' | 'bottom';
+  overlayType: 'gradient' | 'dark_scrim' | 'light_scrim' | 'blur_panel' | 'solid_panel';
+  overlayOpacity: number;
+  minFontSize: number;
+  maxFontSize: number;
+  maxTitleLines: number;
+  maxBodyLines: number;
+  source: 'slide' | 'social';
+}
+
 export type CampaignStatus =
   | 'draft'
   | 'analyzed'
@@ -37,6 +115,14 @@ export interface AdvancedSettings {
   platforms: string[];
   imageProvider: 'auto' | 'openai' | 'fal' | 'local';
   visualStyle: string;
+  preferredLayoutKey?: string;
+  preferredTypographyPreset?: string;
+  designVariant?: DesignVariantSelection | null;
+  selectedDesignVariantId?: string | null;
+  selectedDesignVariant?: DesignVariantSelection | null;
+  designVariants?: CampaignDesignVariant[];
+  layoutTemplates?: LayoutTemplateDto[];
+  churchKit: ChurchKit;
   exportFormats: string[];
   includeSource: boolean;
   includeMetadata: boolean;
@@ -50,6 +136,7 @@ export interface AppSettings {
   churchShortName: string;
   brandColor: string;
   exportFolder: string;
+  churchKit: ChurchKit;
 }
 
 export function generateLocalId(): string {

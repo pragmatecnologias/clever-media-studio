@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import type { CampaignRecord, CampaignStatus, AdvancedSettings, AppSettings } from './types';
+import type { CampaignRecord, CampaignStatus, AdvancedSettings, AppSettings, ChurchKit } from './types';
 import { generateLocalId } from './types';
 
 export type AppScreen =
@@ -35,7 +35,8 @@ export interface CampaignState {
   cta: string;
   language: 'en' | 'es';
   eventDetails: {
-    date?: string; time?: string; timezone?: string; timezoneLabel?: string;
+    churchName?: string; date?: string; time?: string; serviceTime?: string;
+    timezone?: string; timezoneLabel?: string;
     locationName?: string; address?: string; website?: string; phone?: string; livestreamUrl?: string;
   };
   outputSelections: { presentationDeck: boolean; socialPack: boolean; captionPack: boolean; thumbnail: boolean };
@@ -74,8 +75,30 @@ export interface AppStore {
   toggleDrawer: () => void;
   updateAppSettings: (partial: Partial<AppSettings>) => void;
   clearCampaignHistory: () => void;
+  reconcileBackendCampaigns: () => Promise<void>;
   getStatusForCampaign: () => CampaignStatus;
 }
+
+const defaultChurchKit: ChurchKit = {
+  churchName: '',
+  shortName: '',
+  logoPath: '',
+  logoAssetId: '',
+  address: '',
+  website: '',
+  phone: '',
+  livestreamUrl: '',
+  defaultServiceDay: '',
+  defaultServiceTime: '',
+  timezone: '',
+  socialHandles: {},
+  brandColors: {},
+  typographyPreset: '',
+  language: 'en',
+  defaultCTA: '',
+  logoDisplayPreference: 'show',
+  contactDisplayPreference: 'minimal',
+};
 
 const defaultAdvancedSettings: AdvancedSettings = {
   strategyNotes: '',
@@ -91,6 +114,14 @@ const defaultAdvancedSettings: AdvancedSettings = {
   platforms: ['instagram', 'facebook', 'whatsapp', 'youtube'],
   imageProvider: 'auto',
   visualStyle: 'auto',
+  preferredLayoutKey: '',
+  preferredTypographyPreset: '',
+  designVariant: null,
+  selectedDesignVariantId: null,
+  selectedDesignVariant: null,
+  designVariants: [],
+  layoutTemplates: [],
+  churchKit: { ...defaultChurchKit },
   exportFormats: ['pptx', 'pdf', 'png', 'zip'],
   includeSource: true,
   includeMetadata: true,
@@ -102,24 +133,58 @@ const defaultAppSettings: AppSettings = {
   churchShortName: '',
   brandColor: '#3B82F6',
   exportFolder: '',
+  churchKit: { ...defaultChurchKit },
 };
 
-const defaultCampaign: CampaignState = {
-  sourceText: '', sourceName: '',
-  campaignType: 'auto', campaignGoal: 'auto',
-  title: '', subtitle: '', passageOrTopic: '',
-  mainMessage: '', audienceNeed: '', tone: '', cta: '',
-  language: 'en',
-  eventDetails: {},
-  outputSelections: { presentationDeck: true, socialPack: true, captionPack: true, thumbnail: false },
-  generationJobId: null, campaignId: null,
-  generationError: null,
-  analysis: null, deckResults: null, socialResults: null, captionResults: null,
-  exportResults: null,
-  status: 'draft',
-  advancedSettings: { ...defaultAdvancedSettings },
-  presetId: null,
-};
+function createDefaultCampaign(appSettings: AppSettings = defaultAppSettings): CampaignState {
+  const appChurchKit = appSettings.churchKit || defaultChurchKit;
+  return {
+    sourceText: '',
+    sourceName: '',
+    campaignType: 'auto',
+    campaignGoal: 'auto',
+    title: '',
+    subtitle: '',
+    passageOrTopic: '',
+    mainMessage: '',
+    audienceNeed: '',
+    tone: '',
+    cta: '',
+    language: 'en',
+    eventDetails: {
+      churchName: appChurchKit.churchName || appSettings.churchName || '',
+      locationName: appChurchKit.address || '',
+      address: appChurchKit.address || '',
+      website: appChurchKit.website || '',
+      phone: appChurchKit.phone || '',
+      livestreamUrl: appChurchKit.livestreamUrl || '',
+      serviceTime: appChurchKit.defaultServiceTime || '',
+      date: appChurchKit.defaultServiceDay || '',
+      timezone: appChurchKit.timezone || 'America/New_York',
+      timezoneLabel: 'ET',
+    },
+    outputSelections: { presentationDeck: true, socialPack: true, captionPack: true, thumbnail: false },
+    generationJobId: null,
+    campaignId: null,
+    generationError: null,
+    analysis: null,
+    deckResults: null,
+    socialResults: null,
+    captionResults: null,
+    exportResults: null,
+    status: 'draft',
+    advancedSettings: {
+      ...defaultAdvancedSettings,
+      churchKit: {
+        ...defaultChurchKit,
+        ...appChurchKit,
+        churchName: appChurchKit.churchName || appSettings.churchName,
+        shortName: appChurchKit.shortName || appSettings.churchShortName,
+      },
+    },
+    presetId: null,
+  };
+}
 
 export const useAppStore = create<AppStore>()(
   persist(
@@ -128,7 +193,7 @@ export const useAppStore = create<AppStore>()(
       workspaceTab: 'summary',
       backendUrl: 'http://localhost:3001',
       backendMode: 'local',
-      campaign: { ...defaultCampaign },
+      campaign: createDefaultCampaign(defaultAppSettings),
       campaigns: [],
       appSettings: { ...defaultAppSettings },
       drawerOpen: false,
@@ -140,7 +205,7 @@ export const useAppStore = create<AppStore>()(
       updateCampaign: (partial) => set((state) => ({
         campaign: { ...state.campaign, ...partial },
       })),
-      resetCampaign: () => set({ campaign: { ...defaultCampaign } }),
+      resetCampaign: () => set((state) => ({ campaign: createDefaultCampaign(state.appSettings) })),
       toggleDrawer: () => set((state) => ({ drawerOpen: !state.drawerOpen })),
 
       // Campaign persistence
@@ -176,14 +241,49 @@ export const useAppStore = create<AppStore>()(
         }
       },
 
-      loadCampaign: (localId) => {
+      loadCampaign: async (localId) => {
         const record = get().campaigns.find((c) => c.localId === localId);
         if (!record) return;
-        set({
-          campaign: { ...record.snapshot, _localId: record.localId },
-          screen: 'workspace',
-          workspaceTab: 'summary',
-        });
+
+        // Backend-backed campaign: fetch fresh state from API
+        if (record.backendCampaignId && get().backendUrl) {
+          try {
+            const { createApiClient } = await import('./api');
+            const api = createApiClient(get().backendUrl);
+            const fresh = await api.getCampaign(record.backendCampaignId);
+            if (fresh) {
+              const snapshot = {
+                ...createDefaultCampaign(get().appSettings),
+                title: fresh.summary?.title || record.title,
+                campaignType: fresh.summary?.type || record.type,
+                campaignGoal: fresh.summary?.goal || record.goal,
+                status: (fresh.summary?.status || record.status) as any,
+                campaignId: record.backendCampaignId,
+                deckResults: fresh.deckResults || fresh.generatedMedia?.deck || null,
+                socialResults: fresh.socialResults || fresh.generatedMedia?.socialPack || null,
+                captionResults: fresh.captionResults || fresh.generatedMedia?.captions || null,
+                _localId: record.localId,
+              };
+              set({
+                campaign: snapshot as any,
+                screen: 'workspace',
+                workspaceTab: 'summary',
+              });
+              return;
+            }
+          } catch (err) {
+            console.warn('Failed to load backend campaign, using cached snapshot', (err as any)?.message);
+          }
+        }
+
+        // Local-only campaign: restore from snapshot
+        if (record.snapshot) {
+          set({
+            campaign: { ...record.snapshot, _localId: record.localId },
+            screen: 'workspace',
+            workspaceTab: 'summary',
+          });
+        }
       },
 
       deleteCampaign: (localId) => {
@@ -224,6 +324,65 @@ export const useAppStore = create<AppStore>()(
         appSettings: { ...state.appSettings, ...partial },
       })),
       clearCampaignHistory: () => set({ campaigns: [] }),
+
+      reconcileBackendCampaigns: async () => {
+        const { backendUrl, campaigns: localCampaigns } = get();
+        if (!backendUrl) return;
+        try {
+          // Dynamically import to avoid circular dependency
+          const { createApiClient } = await import('./api');
+          const api = createApiClient(backendUrl);
+          const backendList = await api.listCampaigns();
+          if (!Array.isArray(backendList) || backendList.length === 0) return;
+
+          const backendMap = new Map(backendList.map((b: any) => [b.campaignId, b]));
+
+          // Step 1: Remove stale local-only Draft/Untitled test campaigns
+          const cleanedLocal = localCampaigns.filter((c) => {
+            const isStaleTestDraft =
+              !c.backendCampaignId &&
+              c.status === 'draft' &&
+              (!c.title || c.title === 'Untitled' || c.title.startsWith('Debug') || c.title.startsWith('Test'));
+            if (isStaleTestDraft) return false;
+
+            // Remove local entries that exist in backend (backend wins)
+            if (c.backendCampaignId && backendMap.has(c.backendCampaignId)) {
+              return false; // Will be replaced by backend entry
+            }
+            return true;
+          });
+
+          // Step 2: Add backend campaigns as authoritative entries
+          const backendEntries: CampaignRecord[] = backendList.map((b: any) => ({
+            localId: `backend_${b.campaignId}`,
+            title: b.title || 'Untitled',
+            type: b.campaignType,
+            goal: b.campaignGoal,
+            status: b.status as any,
+            updatedAt: b.updatedAt,
+            createdAt: b.createdAt,
+            backendCampaignId: b.campaignId,
+            generationJobId: null,
+            snapshot: null as any, // Backed by backend, loaded on open
+          }));
+
+          // Step 3: Merge — dedupe by backendCampaignId, backend wins
+          const seen = new Set<string>();
+          const merged: CampaignRecord[] = [];
+          for (const entry of [...backendEntries, ...cleanedLocal]) {
+            const key = entry.backendCampaignId || entry.localId;
+            if (!seen.has(key)) {
+              seen.add(key);
+              merged.push(entry);
+            }
+          }
+
+          set({ campaigns: merged.slice(0, 50) });
+        } catch (err) {
+          // Backend unreachable — keep local state
+          console.warn('Campaign reconciliation skipped: backend unreachable', (err as any)?.message);
+        }
+      },
 
       getStatusForCampaign: () => {
         const { campaign } = get();

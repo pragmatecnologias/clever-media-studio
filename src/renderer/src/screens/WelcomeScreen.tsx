@@ -7,6 +7,7 @@ export default function WelcomeScreen() {
   const {
     setScreen, updateCampaign, resetCampaign, campaigns,
     loadCampaign, deleteCampaign, duplicateCampaign, backendUrl, saveCampaign,
+    reconcileBackendCampaigns,
   } = useAppStore();
   const [connected, setConnected] = useState<boolean | null>(null);
   const [backendMeta, setBackendMeta] = useState<{ storeMode?: string; version?: string; databaseConnected?: boolean } | null>(null);
@@ -21,6 +22,8 @@ export default function WelcomeScreen() {
           version: health.version,
           databaseConnected: health.database.connected,
         });
+        // Reconcile campaign history with backend once connected
+        reconcileBackendCampaigns();
       })
       .catch(() => {
         setConnected(false);

@@ -9,6 +9,7 @@ import {
   isInvitationCampaign,
   resolveBestPreset,
 } from '../lib/configure-flow.mjs';
+import type { LayoutTemplateDto } from '../lib/types';
 
 const VISUAL_STYLES = [
   { key: 'auto', label: 'Auto', desc: 'Best match', emoji: '🎨' },
@@ -23,7 +24,17 @@ export default function ConfigureScreen() {
   const { setScreen, campaign, updateCampaign, backendUrl } = useAppStore();
   const [generating, setGenerating] = useState(false);
   const [visualStyle, setVisualStyle] = useState('auto');
+  const [layoutTemplates, setLayoutTemplates] = useState<LayoutTemplateDto[]>([]);
   const outputs = campaign.outputSelections;
+
+  const updateAdvancedSettings = (partial: Record<string, unknown>) => {
+    updateCampaign({
+      advancedSettings: {
+        ...campaign.advancedSettings,
+        ...partial,
+      },
+    });
+  };
 
   // Auto-select best preset based on campaign type if none selected yet
   useEffect(() => {
@@ -35,7 +46,7 @@ export default function ConfigureScreen() {
           campaignType: bestPreset.campaignType,
           campaignGoal: bestPreset.campaignGoal,
           outputSelections: { ...bestPreset.outputSelections },
-          advancedSettings: { ...campaign.advancedSettings, socialPackMode: bestPreset.socialPackMode as any },
+          advancedSettings: { ...campaign.advancedSettings, socialPackMode: bestPreset.socialPackMode as any, presetId: bestPreset.id },
         });
       }
     }
@@ -44,6 +55,21 @@ export default function ConfigureScreen() {
   useEffect(() => {
     setVisualStyle(campaign.advancedSettings.visualStyle || 'auto');
   }, [campaign.advancedSettings.visualStyle]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const api = createApiClient(backendUrl);
+    api.getLayoutTemplates()
+      .then((data) => {
+        if (!cancelled) setLayoutTemplates(Array.isArray(data.templates) ? data.templates : []);
+      })
+      .catch(() => {
+        if (!cancelled) setLayoutTemplates([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [backendUrl]);
 
   const toggle = (key: keyof typeof outputs) => {
     updateCampaign({ outputSelections: { ...outputs, [key]: !outputs[key] } });
@@ -105,24 +131,39 @@ export default function ConfigureScreen() {
         </div>
       </Section>
 
-      {isInvitationCampaign(campaign) ? (
+      {isInvitationCampaign(campaign) ? (() => {
+        const ck = (campaign.advancedSettings?.churchKit || {}) as Record<string, string | undefined>;
+        const ed = (campaign.eventDetails || {}) as Record<string, string | undefined>;
+        return (
         <Section title="Invitation Details" number={2}>
           <div className="grid grid-cols-2 gap-3">
-            <Field label="Date" value={campaign.eventDetails.date || ''} onChange={(v) => updateCampaign({ eventDetails: { ...campaign.eventDetails, date: v } })} />
-            <Field label="Time" value={campaign.eventDetails.time || ''} onChange={(v) => updateCampaign({ eventDetails: { ...campaign.eventDetails, time: v } })} />
-            <Field label="Location" value={campaign.eventDetails.locationName || ''} onChange={(v) => updateCampaign({ eventDetails: { ...campaign.eventDetails, locationName: v } })} />
-            <Field label="Address" value={campaign.eventDetails.address || ''} onChange={(v) => updateCampaign({ eventDetails: { ...campaign.eventDetails, address: v } })} />
-            <Field label="Website" value={campaign.eventDetails.website || ''} onChange={(v) => updateCampaign({ eventDetails: { ...campaign.eventDetails, website: v } })} />
-            <Field label="Phone" value={campaign.eventDetails.phone || ''} onChange={(v) => updateCampaign({ eventDetails: { ...campaign.eventDetails, phone: v } })} />
+            <Field label="Date" value={ed.date || ck.defaultServiceDay || ''} onChange={(v) => updateCampaign({ eventDetails: { ...ed, date: v } })} />
+            <Field label="Time" value={ed.time || ed.serviceTime || ck.defaultServiceTime || ''} onChange={(v) => updateCampaign({ eventDetails: { ...ed, time: v } })} />
+            <Field label="Location" value={ed.locationName || ck.address || ''} onChange={(v) => updateCampaign({ eventDetails: { ...ed, locationName: v } })} />
+            <Field label="Address" value={ed.address || ck.address || ''} onChange={(v) => updateCampaign({ eventDetails: { ...ed, address: v } })} />
+            <Field label="Website" value={ed.website || ck.website || ''} onChange={(v) => updateCampaign({ eventDetails: { ...ed, website: v } })} />
+            <Field label="Phone" value={ed.phone || ck.phone || ''} onChange={(v) => updateCampaign({ eventDetails: { ...ed, phone: v } })} />
+            {(ck.address || ck.website || ck.phone) ? (
+              <p className="col-span-2 text-[10px] text-gray-500">Using Church Kit defaults for empty fields.</p>
+            ) : null}
           </div>
         </Section>
-      ) : null}
+        );
+      })() : null}
 
       {/* 2. Visual Style */}
       <Section title="Visual Style" number={isInvitationCampaign(campaign) ? 3 : 2}>
         <div className="grid grid-cols-3 gap-2">
           {VISUAL_STYLES.map(s => (
-            <button key={s.key} data-testid={`configure-visual-style-${s.key}`} onClick={() => setVisualStyle(s.key)}
+            <button
+              key={s.key}
+              data-testid={`configure-visual-style-${s.key}`}
+              onClick={() => {
+                setVisualStyle(s.key);
+                updateAdvancedSettings({
+                  visualStyle: s.key,
+                });
+              }}
               className={`text-left p-3 rounded-lg border transition-all ${
                 visualStyle === s.key ? 'border-purple-500/40 bg-purple-500/10' : 'border-white/10 bg-white/5 hover:bg-white/8'
               }`}>
@@ -134,8 +175,57 @@ export default function ConfigureScreen() {
         </div>
       </Section>
 
+      <Section title="Template Gallery" number={isInvitationCampaign(campaign) ? 4 : 3}>
+        <div className="flex items-center gap-3 flex-wrap">
+          <label className="text-[10px] text-gray-500 uppercase tracking-wider">Typography preset</label>
+          <select
+            value={campaign.advancedSettings.preferredTypographyPreset || ''}
+            onChange={(e) => updateAdvancedSettings({ preferredTypographyPreset: e.target.value })}
+            className="bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-gray-200"
+          >
+            <option value="">Auto</option>
+            <option value="modern_pastoral">Modern Pastoral</option>
+            <option value="scripture_classic">Scripture Classic</option>
+            <option value="minimal_premium">Minimal Premium</option>
+            <option value="elegant_worship">Elegant Worship</option>
+            <option value="youth_modern">Youth Modern</option>
+          </select>
+        </div>
+        <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+          {layoutTemplates.slice(0, 6).map((template) => {
+            const selected = campaign.advancedSettings.preferredLayoutKey === template.layoutKey
+              || campaign.advancedSettings.designVariant?.layoutKey === template.layoutKey;
+            return (
+              <button
+                key={template.layoutKey}
+                onClick={() => updateAdvancedSettings({
+                  preferredLayoutKey: template.layoutKey,
+                  designVariant: {
+                    ...(campaign.advancedSettings.designVariant || {}),
+                    layoutKey: template.layoutKey,
+                    typographyPreset: campaign.advancedSettings.preferredTypographyPreset || campaign.advancedSettings.designVariant?.typographyPreset || '',
+                    visualStyle,
+                  },
+                })}
+                className={`text-left p-3 rounded-lg border transition-all ${
+                  selected ? 'border-purple-500/40 bg-purple-500/10' : 'border-white/10 bg-white/5 hover:bg-white/8'
+                }`}
+              >
+                <p className="text-[10px] uppercase tracking-wider text-gray-500">{template.platform} · {template.source}</p>
+                <p className="text-sm font-semibold text-gray-100 mt-1">{template.label}</p>
+                <p className="text-[11px] text-gray-400 mt-1">{template.layoutFamily}</p>
+                <p className="text-[10px] text-gray-500 mt-2">{template.purpose}</p>
+              </button>
+            );
+          })}
+        </div>
+        <p className="text-[11px] text-gray-500">
+          Choose a structured starting layout from the built-in registry. You can generate alternate designs later without changing the sermon content.
+        </p>
+      </Section>
+
       {/* 3. Package Presets */}
-      <Section title="Choose Package" number={isInvitationCampaign(campaign) ? 4 : 3}>
+      <Section title="Choose Package" number={isInvitationCampaign(campaign) ? 5 : 4}>
         <div className="grid grid-cols-3 gap-2">
           {PRESETS.map(p => (
             <button key={p.id} data-testid={`configure-preset-${p.id}`} onClick={() => {
@@ -144,7 +234,11 @@ export default function ConfigureScreen() {
                 presetId: p.id,
                 campaignType: p.campaignType,
                 campaignGoal: p.campaignGoal,
-                advancedSettings: { ...campaign.advancedSettings, socialPackMode: p.socialPackMode as any },
+                advancedSettings: {
+                  ...campaign.advancedSettings,
+                  socialPackMode: p.socialPackMode as any,
+                  presetId: p.id,
+                },
               });
             }}
             className={`text-left p-3 rounded-lg border transition-all ${

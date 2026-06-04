@@ -62,6 +62,19 @@ export default function ExportScreen() {
 
   const selectedFormats = campaign.advancedSettings.exportFormats || [];
 
+  const loadExportDownloadInfo = async (campaignId: string, exportId: string, attempts = 8) => {
+    let lastInfo: ExportDownloadInfo | null = null;
+    for (let attempt = 0; attempt < attempts; attempt += 1) {
+      const info = await api.getExportDownloadInfo(campaignId, exportId);
+      lastInfo = info;
+      if (info?.zipFilePath || info?.exportDir || info?.status === 'ready') {
+        return info;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 750));
+    }
+    return lastInfo;
+  };
+
   const loadExportState = async () => {
     if (!campaign.campaignId) return;
     setRefreshing(true);
@@ -77,8 +90,9 @@ export default function ExportScreen() {
         exportResults: data.generatedMedia.exports?.[0] || campaign.exportResults,
       });
 
-      if (data.exportJobId) {
-        const info = await api.getExportDownloadInfo(campaign.campaignId, data.exportJobId);
+      const exportId = data.exportJobId || data.generatedMedia.exports?.[0]?.exportId || null;
+      if (exportId) {
+        const info = await loadExportDownloadInfo(campaign.campaignId, exportId);
         setExportInfo(info);
       } else {
         setExportInfo(null);
@@ -115,7 +129,7 @@ export default function ExportScreen() {
       const result = await api.exportCampaign(campaign.campaignId, selectedFormats);
       const data = await api.getCampaign(campaign.campaignId);
       setBackendCampaign(data);
-      const info = await api.getExportDownloadInfo(campaign.campaignId, result.exportJobId);
+      const info = await loadExportDownloadInfo(campaign.campaignId, result.exportJobId);
       setExportInfo(info);
       setBackendCampaign(data);
       updateCampaign({
